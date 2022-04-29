@@ -15,17 +15,28 @@
 
 #include <windows.h>
 #include <d3d12.h>
-#include <wrl/client.h>
+#include <wrl/client.h> // Use the good old helper functions, not the huge WinRT entanglement.
 
-#include "headers/dml_provider_factory.h"
-#include "headers/onnxruntime_cxx_api.h"
+#include "dml_provider_factory.h"
+#include "onnxruntime_cxx_api.h"
 
 ////////////////////////////////////////////////////////////////////////////////
+// Configuration
 
-#define THROW_IF_FAILED(hr) {HRESULT localHr = (hr); if (FAILED(hr)) throw hr;}
-#define RETURN_IF_FAILED(hr) {HRESULT localHr = (hr); if (FAILED(hr)) return hr;}
+#define USE_DML_EXECUTION_PROVIDER true
+#define PASS_TENSORS_AS_D3D_RESOURCES true
+#define EXPORT_ORT_FILE false
+
+static_assert(USE_DML_EXECUTION_PROVIDER == true || PASS_TENSORS_AS_D3D_RESOURCES == false); // CPU can't accept D3D resources.
+
+////////////////////////////////////////////////////////////////////////////////
+// Common helpers
+
+#define THROW_IF_FAILED(hr) {HRESULT localHr = (hr); if (FAILED(localHr)) throw localHr;}
+#define RETURN_IF_FAILED(hr) {HRESULT localHr = (hr); if (FAILED(localHr)) return localHr;}
 #define THROW_IF_NOT_OK(status) {auto localStatus = (status); if (localStatus) throw E_FAIL;}
 #define RETURN_HR_IF_NOT_OK(status) {auto localStatus = (status); if (localStatus) return E_FAIL;}
+
 
 template <typename T>
 using BaseType =
@@ -37,14 +48,17 @@ using BaseType =
         >
     >;
 
+
 template <typename T>
 using deleting_unique_ptr = std::unique_ptr<T, std::function<void(T*)>>;
+
 
 template <typename C, typename T = BaseType<decltype(*std::declval<C>().data())>>
 T GetElementCount(C const& range)
 {
     return std::accumulate(range.begin(), range.end(), static_cast<T>(1), std::multiplies<T>());
 };
+
 
 // Used to work-around std::vector bool specialization.
 template <typename T>
@@ -55,6 +69,15 @@ public:
     WrapperClass(T const& value) : value_(value) {}
     T value_;
 };
+
+
+template <typename T>
+struct ComPtr : public Microsoft::WRL::ComPtr<T>
+{
+    // Having to call .Get() dozens of times for every function call that takes a T* is ridiculous.
+    operator T* () { return this->Get(); }
+};
+
 
 size_t ByteSizeOfOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
 {
@@ -83,6 +106,7 @@ size_t ByteSizeOfOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
 
 
 ////////////////////////////////////////////////////////////////////////////////
+// Forward declarations for helpers
 
 Ort::Value CreateTensorValueUsingD3DResource(
     ID3D12Device* d3dDevice,
@@ -91,26 +115,44 @@ Ort::Value CreateTensorValueUsingD3DResource(
     std::span<const int64_t> dimensions,
     ONNXTensorElementDataType elementDataType,
     size_t elementByteSize,
+    /*out opt*/ ID3D12Resource** d3dResource,
     /*out*/ void** dmlEpResourceWrapper
 );
+
+void UploadTensorData(
+    ID3D12CommandQueue* commandQueue,
+    ID3D12CommandAllocator* commandAllocator,
+    ID3D12GraphicsCommandList* commandList,
+    ID3D12Resource* destinationResource,
+    std::span<const std::byte> sourceData
+);
+
+void DownloadTensorData(
+    ID3D12CommandQueue* commandQueue,
+    ID3D12CommandAllocator* commandAllocatar,
+    ID3D12GraphicsCommandList* commandList,
+    ID3D12Resource* sourceResource,
+    std::span<std::byte> destinationData
+);
+
 
 ////////////////////////////////////////////////////////////////////////////////
 
 int main()
 {
-    #if 1
+#if 1
     const wchar_t* modelFilePath = L"Upsample4xOpset11.onnx";
     const char* modelInputTensorName = "input";
     const char* modelOutputTensorName = "output";
-    const std::array<int64_t, 4> inputShape = { 1, 3, 1000, 1000 };
-    const std::array<int64_t, 4> outputShape = { 1, 3, 4000, 4000 };
+    const std::array<int64_t, 4> inputShape = { 1, 3, 100, 100 };
+    const std::array<int64_t, 4> outputShape = { 1, 3, 400, 400 };
     ONNXTensorElementDataType inputDataType = ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
     ONNXTensorElementDataType outputDataType = ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
     using inputDataTypeT = float;
     using outputDataTypeT = float;
-    #elif 0
+#elif 1
     // Squeezenet opset v7 https://github.com/onnx/models/blob/master/vision/classification/squeezenet/README.md
-    const wchar_t* modelFilePath = L"D:/ai/models/squeezenet/SqueezeNet.onnx";
+    const wchar_t* modelFilePath = L"squeezenet/SqueezeNet.onnx";
     const char* modelInputTensorName = "data_0";
     const char* modelOutputTensorName = "softmaxout_1";
     const std::array<int64_t, 4> inputShape = { 1, 3, 224, 224 };
@@ -119,18 +161,18 @@ int main()
     ONNXTensorElementDataType outputDataType = ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
     using inputDataTypeT = float;
     using outputDataTypeT = float;
-    #elif 1
-    const wchar_t* modelFilePath = L"S:/WindowsAI/build/x64-win-redist-debug/install/bin/OnnxBackendTestData/test_nonzero_example/model.onnx";
+#elif 1
+    const wchar_t* modelFilePath = L"OnnxBackendTestData/test_nonzero_example/model.onnx";
     const char* modelInputTensorName = "condition";
     const char* modelOutputTensorName = "result";
     const std::array<int64_t, 2> inputShape = { 2, 2 };
     const std::array<int64_t, 2> outputShape = { 2, 4 };
     ONNXTensorElementDataType inputDataType = ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL;
     ONNXTensorElementDataType outputDataType = ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64;
-    using inputDataTypeT = bool;
+    using inputDataTypeT = WrapperClass<bool>;
     using outputDataTypeT = int64_t;
-    #elif 0
-    const wchar_t* modelFilePath = L"S:/WindowsAI/build/x64-win-redist-debug/install/bin/OnnxBackendTestData/test_shape/model.onnx";
+#elif 0
+    const wchar_t* modelFilePath = L"OnnxBackendTestData/test_shape/model.onnx";
     const char* modelInputTensorName = "x";
     const char* modelOutputTensorName = "y";
     const std::array<int64_t, 3> inputShape = { 3, 4, 5 };
@@ -139,9 +181,7 @@ int main()
     ONNXTensorElementDataType outputDataType = ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64;
     using inputDataTypeT = float;
     using outputDataTypeT = int64_t;
-    #endif
-
-    const bool passTensorsAsD3DResources = false;
+#endif
 
     LARGE_INTEGER startTime;
     LARGE_INTEGER d3dDeviceCreationTime;
@@ -164,112 +204,73 @@ int main()
         // todo: change the adapter from nullptr to an explicit EnumAdaptersByGpu call,
         // or EnumAdapters.
         printf("Creating Direct3D device.\n");
+
         // Yeah, D3D's interface just to upload some resource data is a bit ... verbose.
-        Microsoft::WRL::ComPtr<ID3D12Device> d3d12Device;
-        Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue;
-        Microsoft::WRL::ComPtr<ID3D12CommandAllocator> commandAllocator;
-        Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList;
-        Microsoft::WRL::ComPtr<IDMLCommandRecorder> commandRecorder;
-        Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> descriptorHeap;
-        Microsoft::WRL::ComPtr<ID3D12Resource> uploadBuffer;
-        Microsoft::WRL::ComPtr<ID3D12Resource> downloadBuffer;
+        ComPtr<ID3D12Device> d3d12Device;
+        ComPtr<ID3D12CommandQueue> commandQueue;
+        ComPtr<ID3D12CommandAllocator> commandAllocator;
+        ComPtr<ID3D12GraphicsCommandList> commandList;
+
+        D3D12_COMMAND_QUEUE_DESC const commandQueueDescription =
+        {
+            .Type = D3D12_COMMAND_LIST_TYPE_DIRECT,
+            .Priority = 0,
+            .Flags = D3D12_COMMAND_QUEUE_FLAG_NONE,
+            .NodeMask = 0,
+        };
 
         THROW_IF_FAILED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&d3d12Device)));
         QueryPerformanceCounter(&d3dDeviceCreationTime);
 
-        D3D12_COMMAND_QUEUE_DESC commandQueueDescription = {};
-        commandQueueDescription.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-        commandQueueDescription.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-
-        THROW_IF_FAILED(d3d12Device->CreateCommandQueue(
-            &commandQueueDescription,
-            IID_PPV_ARGS(&commandQueue)
-        ));
-
-        THROW_IF_FAILED(d3d12Device->CreateCommandAllocator(
-            D3D12_COMMAND_LIST_TYPE_DIRECT,
-            IID_PPV_ARGS(&commandAllocator)
-        ));
-
-        THROW_IF_FAILED(d3d12Device->CreateCommandList(
-            0,
-            D3D12_COMMAND_LIST_TYPE_DIRECT,
-            commandAllocator.Get(),
-            nullptr,
-            IID_PPV_ARGS(&commandList)
-        ));
-
-        D3D12_HEAP_PROPERTIES uploadHeapProperties = {
-            D3D12_HEAP_TYPE_UPLOAD,
-            D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-            D3D12_MEMORY_POOL_UNKNOWN,
-            0,
-            0
-        };
-        size_t inputBufferByteSize = ByteSizeOfOnnxTensorElementDataType(inputDataType) * GetElementCount(inputShape);
-        D3D12_RESOURCE_DESC uploadResourceDesc = {
-            D3D12_RESOURCE_DIMENSION_BUFFER,
-            0,
-            static_cast<uint64_t>(inputBufferByteSize),
-            1,
-            1,
-            1,
-            DXGI_FORMAT_UNKNOWN,
-            {1, 0},
-            D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-            D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
-        };
-
-        THROW_IF_FAILED(d3d12Device->CreateCommittedResource(
-            &uploadHeapProperties,
-            D3D12_HEAP_FLAG_NONE,
-            &uploadResourceDesc,
-            D3D12_RESOURCE_STATE_GENERIC_READ,
-            nullptr,
-            IID_PPV_ARGS(&uploadBuffer)
-        ));
+        THROW_IF_FAILED(d3d12Device->CreateCommandQueue(&commandQueueDescription, IID_PPV_ARGS(&commandQueue)));
+        THROW_IF_FAILED(d3d12Device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator)));
+        THROW_IF_FAILED(d3d12Device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator.Get(), nullptr, IID_PPV_ARGS(&commandList)));
 
         OrtApi const& ortApi = Ort::GetApi(); // Uses ORT_API_VERSION
         const OrtDmlApi* ortDmlApi;
         THROW_IF_NOT_OK(ortApi.GetExecutionProviderApi("DML", ORT_API_VERSION, reinterpret_cast<const void**>(&ortDmlApi)));
 
         // ONNX Runtime setup
-        Ort::Env ortEnvironment(ORT_LOGGING_LEVEL_WARNING, "DirectML_Direct3D_TensorAllocation_Test");
-        //Ort::Env ortEnvironment(ORT_LOGGING_LEVEL_VERBOSE, "DirectML_Direct3D_TensorAllocation_Test");
+        Ort::Env ortEnvironment(ORT_LOGGING_LEVEL_WARNING, "DirectML_Direct3D_TensorAllocation_Test"); // Note ORT_LOGGING_LEVEL_VERBOSE is useful too.
         Ort::SessionOptions sessionOptions;
         sessionOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
         sessionOptions.DisableMemPattern();
-        sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+        sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL); // Note ORT_ENABLE_BASIC is useful for debugging.
         ortApi.AddFreeDimensionOverrideByName(sessionOptions, "batch_size", 1);
-        //ortApi.SetOptimizedModelFilePath(sessionOptions, L"optimized.ort");
-        // todo: change this to an explicit device id, not just 0 using adapter above.
-        ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions, 0);
+
+        if (EXPORT_ORT_FILE)
+        // Test export and reload of optimized model.
+        {
+            Ort::SessionOptions sessionOptions2(sessionOptions.Clone());
+            //sessionOptions2.AddConfigEntry("ep.dml.disable_graph_fusion", "1");
+            sessionOptions2.SetOptimizedModelFilePath(L"optimized.ort");
+            if (USE_DML_EXECUTION_PROVIDER)
+            {
+                ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions2, 0);
+            }
+            Ort::Session session2 = Ort::Session(ortEnvironment, modelFilePath, sessionOptions);
+            modelFilePath = L"optimized.ort";
+        }
+
+        if (USE_DML_EXECUTION_PROVIDER)
+        {
+            printf("Adding the DirectML execution provider.\n");
+            ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions, 0); // todo: change this to an explicit device id, not just 0 using adapter above.
+        }
 
         printf("Loading model.\n");
         Ort::Session session = Ort::Session(ortEnvironment, modelFilePath, sessionOptions);
-
-        #if 0
-        /// hack:::
-        // Test reload of optimized model.
-        // If you comment out "*isDmlGraphNode = true;" in GraphPartitioner.cpp - GetRegistrationProperties(),
-        // then this works.
-        Ort::OrtRelease(session.release());
-        ortApi.SetOptimizedModelFilePath(sessionOptions, L"");
-        Ort::Session session = Ort::Session(ortEnvironment, L"O:\\out.ort", sessionOptions);
-        /// :::hack
-        #endif
-
         QueryPerformanceCounter(&sessionCreationTime);
 
         Ort::IoBinding ioBinding = Ort::IoBinding::IoBinding(session);
-        const char* memoryInformationName = passTensorsAsD3DResources ? "DML" : "Cpu";
+        const char* memoryInformationName = PASS_TENSORS_AS_D3D_RESOURCES ? "DML" : "Cpu";
         Ort::MemoryInfo memoryInformation(memoryInformationName, OrtAllocatorType::OrtDeviceAllocator, 0, OrtMemType::OrtMemTypeDefault);
         // Not needed: Ort::Allocator allocator(session, memoryInformation);
 
         // Create input tensor.
         Ort::Value inputTensor(nullptr);
-        std::vector<WrapperClass<inputDataTypeT>> inputTensorValues(static_cast<size_t>(GetElementCount(inputShape)), inputDataTypeT(0));
-        if constexpr (std::is_same_v<inputDataTypeT, bool>) // Why, C++, why?... Just let me have a sequence of {false, true, false, true...}.
+        std::vector<inputDataTypeT> inputTensorValues(static_cast<size_t>(GetElementCount(inputShape)), inputDataTypeT(0));
+        if constexpr (std::is_same_v<inputDataTypeT, WrapperClass<bool>>) // Why C++, why?... Just let iota work as expected with a wrapping sequence of {false, true, false, true...}.
         {
             std::fill(inputTensorValues.begin(), inputTensorValues.end(), inputDataTypeT(1));
         }
@@ -277,23 +278,29 @@ int main()
         {
             std::iota(inputTensorValues.begin(), inputTensorValues.end(), inputDataTypeT(0));
         }
-        Microsoft::WRL::ComPtr<IUnknown> inputTensorEpWrapper;
+        ComPtr<IUnknown> inputTensorExecutionProviderWrapper;
 
-        if (passTensorsAsD3DResources)
+        if (PASS_TENSORS_AS_D3D_RESOURCES)
         {
+            ComPtr<ID3D12Resource> inputD3dResource;
             // Create empty D3D resource for input.
             inputTensor = CreateTensorValueUsingD3DResource(
-                d3d12Device.Get(),
+                d3d12Device,
                 *ortDmlApi,
                 memoryInformation,
                 inputShape,
                 inputDataType,
                 ByteSizeOfOnnxTensorElementDataType(inputDataType),
-                /*out*/ IID_PPV_ARGS_Helper(inputTensorEpWrapper.GetAddressOf())
+                /*out*/ &inputD3dResource,
+                /*out*/ IID_PPV_ARGS_Helper(inputTensorExecutionProviderWrapper.GetAddressOf())
             );
-            #if 0
-            UploadTensorData();//!!!
-            #endif
+            UploadTensorData(
+                commandQueue,
+                commandAllocator,
+                commandList,
+                inputD3dResource,
+                std::as_bytes(std::span<inputDataTypeT>(inputTensorValues))
+            );
         }
         else // CPU tensor
         {
@@ -309,17 +316,19 @@ int main()
         // Create output tensor on device memory.
         Ort::Value outputTensor(nullptr);
         std::vector<outputDataTypeT> outputTensorValues(static_cast<size_t>(GetElementCount(outputShape)), outputDataTypeT(0));
-        Microsoft::WRL::ComPtr<IUnknown> outputTensorEpWrapper;
+        ComPtr<IUnknown> outputTensorEpWrapper;
+        ComPtr<ID3D12Resource> outputD3dResource;
 
-        if (passTensorsAsD3DResources)
+        if (PASS_TENSORS_AS_D3D_RESOURCES)
         {
             outputTensor = CreateTensorValueUsingD3DResource(
-                d3d12Device.Get(),
+                d3d12Device,
                 *ortDmlApi,
                 memoryInformation,
                 outputShape,
                 outputDataType,
                 ByteSizeOfOnnxTensorElementDataType(outputDataType),
+                /*out*/ &outputD3dResource,
                 /*out*/ IID_PPV_ARGS_Helper(outputTensorEpWrapper.GetAddressOf())
             );
         }
@@ -345,8 +354,6 @@ int main()
 
         Ort::RunOptions runOptions;
 
-        // TODO: Upload inputTensorValues to GPU inputTensor.
-
         printf("Beginning execution.\n");
         QueryPerformanceCounter(&runStartTime);
         session.Run(runOptions, ioBinding);
@@ -355,6 +362,17 @@ int main()
         QueryPerformanceCounter(&synchronizeOutputsTime);
         runEndTime = synchronizeOutputsTime;
         printf("Finished execution.\n");
+
+        if (PASS_TENSORS_AS_D3D_RESOURCES)
+        {
+            DownloadTensorData(
+                commandQueue,
+                commandAllocator,
+                commandList,
+                outputD3dResource,
+                std::as_writable_bytes(std::span<outputDataTypeT>(outputTensorValues))
+            );
+        }
 
         auto printDuration = [=](char const* message, LARGE_INTEGER nextTime, LARGE_INTEGER previousTime = {}) mutable
         {
@@ -378,35 +396,22 @@ int main()
         printDuration("run+synchronize time.........", runEndTime, runStartTime);
         printDuration("total time...................", synchronizeOutputsTime, startTime);
 
-        // TODO: Download outputTensorValues from GPU outputTensor.
-
         ////////////////////////////////////////
-        // Print the top results if the output tensors were on the CPU.
-        if (!passTensorsAsD3DResources)
+        // Print the first 10 and top 10 results.
+        printf("First 10 results:\n");
+        for (int i = 0; i <= std::min(outputTensorValues.size(), size_t(10)); ++i)
         {
-            #if 0
-            #if 1 // Print first 10 values.
-            for (int i = 0; i <= std::min(outputTensorValues.size(), size_t(10)); ++i)
-            {
-                printf("output[%d] = %f\n", i, outputTensorValues[i]);
-            }
-            #else // Print top 10.
-            std::vector<uint32_t> indices(outputTensorValues.size(), 0);
-            std::iota(indices.begin(), indices.end(), 0);
-            sort(
-                indices.begin(),
-                indices.end(),
-                [&](uint32_t a, uint32_t b)
-                {
-                    return (outputTensorValues[a] > outputTensorValues[b]);
-                }
-            );
-            for (int i = 0; i <= std::min(indices.size(), size_t(10)); ++i)
-            {
-                printf("output[%d] = %f\n", indices[i], outputTensorValues[indices[i]]);
-            }
-            #endif
-            #endif
+            printf("    output[%d] = %f\n", i, outputTensorValues[i]);
+        }
+
+        printf("Top 10 results:\n");
+        size_t maxSortSize = std::min(size_t(10'000), outputTensorValues.size());
+        std::vector<uint32_t> indices(maxSortSize, 0);
+        std::iota(indices.begin(), indices.end(), 0);
+        sort(indices.begin(), indices.end(), [&](uint32_t a, uint32_t b) { return (outputTensorValues[a] > outputTensorValues[b]);});
+        for (size_t i = 0, ci = std::min(indices.size(), size_t(10)); i <= ci; ++i)
+        {
+            printf("    output[%d] = %f\n", indices[i], outputTensorValues[indices[i]]);
         }
     }
     catch (Ort::Exception const& exception)
@@ -423,48 +428,48 @@ int main()
     return 0;
 }
 
-Microsoft::WRL::ComPtr<ID3D12Resource> CreateD3D12ResourceForTensor(
+
+ComPtr<ID3D12Resource> CreateD3D12ResourceOfByteSize(
     ID3D12Device* d3dDevice,
-    size_t elementByteSize,
-    std::span<const int64_t> tensorDimensions
-    )
+    size_t resourceByteSize,
+    D3D12_HEAP_TYPE heapType = D3D12_HEAP_TYPE_DEFAULT,
+    D3D12_RESOURCE_STATES resourceState = D3D12_RESOURCE_STATE_COMMON,
+    D3D12_RESOURCE_FLAGS resourceFlags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
+)
 {
-    // Try to allocate the backing memory for the caller
-    auto bufferSize = GetElementCount(tensorDimensions);
-    assert(bufferSize > 0);
-    assert(elementByteSize > 0);
-    size_t bufferByteSize = static_cast<size_t>(bufferSize * elementByteSize);
-    bufferByteSize = std::max(bufferByteSize, size_t(DML_MINIMUM_BUFFER_TENSOR_ALIGNMENT));
+    resourceByteSize = std::max(resourceByteSize, size_t(DML_MINIMUM_BUFFER_TENSOR_ALIGNMENT));
 
     // DML needs the resources' sizes to be a multiple of 4 bytes
-    (bufferByteSize += 3) &= ~3;
+    (resourceByteSize += 3) &= ~3;
 
-    D3D12_HEAP_PROPERTIES heapProperties = {
-        D3D12_HEAP_TYPE_DEFAULT,
-        D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-        D3D12_MEMORY_POOL_UNKNOWN,
-        0,
-        0
-    };
-    D3D12_RESOURCE_DESC resourceDesc = {
-        D3D12_RESOURCE_DIMENSION_BUFFER,
-        0,
-        static_cast<uint64_t>(bufferByteSize),
-        1,
-        1,
-        1,
-        DXGI_FORMAT_UNKNOWN,
-        {1, 0},
-        D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
+    D3D12_HEAP_PROPERTIES const heapProperties = {
+        .Type = heapType, // Default to D3D12_HEAP_TYPE_DEFAULT.
+        .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+        .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+        .CreationNodeMask = 1,
+        .VisibleNodeMask = 1
     };
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> gpuResource;
+    D3D12_RESOURCE_DESC const resourceDesc =
+    {
+        .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+        .Alignment = 0,
+        .Width = static_cast<uint64_t>(resourceByteSize),
+        .Height = 1,
+        .DepthOrArraySize = 1,
+        .MipLevels = 1,
+        .Format = DXGI_FORMAT_UNKNOWN,
+        .SampleDesc = {1, 0},
+        .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+        .Flags = resourceFlags // Default to D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS.
+    };
+
+    ComPtr<ID3D12Resource> gpuResource;
     THROW_IF_FAILED(d3dDevice->CreateCommittedResource(
         &heapProperties,
         D3D12_HEAP_FLAG_NONE,
         &resourceDesc,
-        D3D12_RESOURCE_STATE_COMMON,
+        resourceState, // Default to D3D12_RESOURCE_STATE_COMMON
         nullptr,
         __uuidof(ID3D12Resource),
         /*out*/ &gpuResource
@@ -472,6 +477,23 @@ Microsoft::WRL::ComPtr<ID3D12Resource> CreateD3D12ResourceForTensor(
 
     return gpuResource;
 }
+
+
+ComPtr<ID3D12Resource> CreateD3D12ResourceForTensor(
+    ID3D12Device* d3dDevice,
+    size_t elementByteSize,
+    std::span<const int64_t> tensorDimensions
+)
+{
+    // Try to allocate the backing memory for the caller
+    auto bufferSize = GetElementCount(tensorDimensions);
+    assert(bufferSize > 0);
+    assert(elementByteSize > 0);
+    size_t bufferByteSize = static_cast<size_t>(bufferSize * elementByteSize);
+
+    return CreateD3D12ResourceOfByteSize(d3dDevice, bufferByteSize);
+}
+
 
 Ort::Value CreateTensorValueFromExistingD3DResource(
     OrtDmlApi const& ortDmlApi,
@@ -510,6 +532,7 @@ Ort::Value CreateTensorValueFromExistingD3DResource(
     return newValue;
 }
 
+
 Ort::Value CreateTensorValueUsingD3DResource(
     ID3D12Device* d3dDevice,
     OrtDmlApi const& ortDmlApi,
@@ -517,246 +540,138 @@ Ort::Value CreateTensorValueUsingD3DResource(
     std::span<const int64_t> tensorDimensions,
     ONNXTensorElementDataType elementDataType,
     size_t elementByteSize,
+    /*out opt*/ ID3D12Resource** d3dResource,
     /*out*/ void** dmlEpResourceWrapper // Must stay alive with Ort::Value.
     )
 {
     // Create empty resource (values don't matter because we won't read them back anyway).
-    Microsoft::WRL::ComPtr<ID3D12Resource> d3dResource = CreateD3D12ResourceForTensor(
+    ComPtr<ID3D12Resource> localD3dResource = CreateD3D12ResourceForTensor(
         d3dDevice,
         elementByteSize,
         tensorDimensions
     );
+    if (d3dResource)
+    {
+        localD3dResource->AddRef();
+        *d3dResource = localD3dResource;
+    }
 
     return CreateTensorValueFromExistingD3DResource(
         ortDmlApi,
         memoryInformation,
-        d3dResource.Get(),
+        localD3dResource,
         tensorDimensions,
         elementDataType,
         /*out*/ dmlEpResourceWrapper
     );
 }
 
-#if 0
 
-https://github.com/microsoft/DirectML/blob/master/Samples/HelloDirectML/main.cpp
-https://docs.microsoft.com/en-us/windows/win32/direct3d12/uploading-resources
-https://github.com/microsoft/DirectML/blob/master/Python/src/device.cpp
+void WaitForQueueToComplete(ID3D12CommandQueue* queue)
+{
+    ComPtr<ID3D12Device> device;
+    THROW_IF_FAILED(queue->GetDevice(IID_PPV_ARGS(device.GetAddressOf())));
+    ComPtr<ID3D12Fence> fence;
+    THROW_IF_FAILED(device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(fence.GetAddressOf())));
+    THROW_IF_FAILED(queue->Signal(fence, 1));
+    THROW_IF_FAILED(fence->SetEventOnCompletion(1, nullptr));
+}
 
 
 void UploadTensorData(
-    ID3D12Device* d3dDevice,
-    ID3D12Resource* d3dResource,
-    std::span<const std::byte> data
+    ID3D12CommandQueue* commandQueue,
+    ID3D12CommandAllocator* commandAllocator,
+    ID3D12GraphicsCommandList* commandList,
+    ID3D12Resource* destinationResource,
+    std::span<const std::byte> sourceData
     )
 {
-    size_t dataByteSize = data.size();
+    // Get the size of the resource.
+    ComPtr<ID3D12Device> d3d12Device;
+    THROW_IF_FAILED(commandQueue->GetDevice(IID_PPV_ARGS(&d3d12Device)));
+    D3D12_RESOURCE_DESC resourceDesc = destinationResource->GetDesc();
+    assert(resourceDesc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER);
+    const size_t dataSizeInBytes = static_cast<size_t>(resourceDesc.Width);
+
+    // Create intermediate upload resource visible to both CPU and GPU.
+    ComPtr<ID3D12Resource> uploadBuffer = CreateD3D12ResourceOfByteSize(d3d12Device, dataSizeInBytes, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_FLAG_NONE);
+
+    // Copy CPU-side data to shared memory that is both CPU and GPU visible.
+    size_t clampedDataByteSize = std::min(dataSizeInBytes, sourceData.size());
     std::byte* uploadBufferData = nullptr;
     THROW_IF_FAILED(uploadBuffer->Map(0, nullptr, reinterpret_cast<void**>(&uploadBufferData)));
-
-    memcpy(uploadBufferData, data.data(), data.size());
+    memcpy(uploadBufferData, sourceData.data(), clampedDataByteSize);
     uploadBuffer->Unmap(0, nullptr);
 
-    // Record the copy from the upload heap into the inputs resource
-    commandList->ResourceBarrier(
-        1,
-        &CD3DX12_RESOURCE_BARRIER::Transition(
-            d3dResource,
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-            D3D12_RESOURCE_STATE_COPY_DEST
-        )
-    );
-    commandList->CopyBufferRegion(d3dResource.Get(), 0, uploadBuffer.Get(), 0, dataByteSize);
-    commandList->ResourceBarrier(
-        1,
-        &CD3DX12_RESOURCE_BARRIER::Transition(
-            d3dResource,
-            D3D12_RESOURCE_STATE_COPY_DEST,
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS
-        )
-    );
-
-    m_commandList->SetDescriptorHeaps(1, m_descriptorHeap.GetAddressOf());
-    m_commandRecorder->RecordDispatch(m_commandList.Get(), m_operatorInitializer.Get(), m_bindingTable.Get());
-    
-    THROW_IF_FAILED(m_commandList->Close());
-
-    ID3D12CommandList* commandLists[] = { m_commandList.Get() };
-    m_commandQueue->ExecuteCommandLists(ARRAYSIZE(commandLists), commandLists);
-
-    WaitForQueueToComplete(m_commandQueue);
-
-    THROW_IF_FAILED(m_commandAllocator->Reset());
-    THROW_IF_FAILED(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
-}
-#endif
-
-#if 0
-
-    std::array<FLOAT, tensorElementCount> inputTensorElementArray;
+    D3D12_RESOURCE_BARRIER const resourceBarrier =
     {
-        std::wcout << L"input tensor: ";
-        for (auto & element : inputTensorElementArray)
-        {
-            element = 1.618f;
-            std::wcout << element << L' ';
-        };
-        std::wcout << std::endl;
+        .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+        .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+        .Transition = {
+            .pResource = destinationResource,
+            .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+            .StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
+            .StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        },
+    };
 
-        D3D12_SUBRESOURCE_DATA tensorSubresourceData{};
-        tensorSubresourceData.pData = inputTensorElementArray.data();
-        tensorSubresourceData.RowPitch = static_cast<LONG_PTR>(tensorBufferSize);
-        tensorSubresourceData.SlicePitch = tensorSubresourceData.RowPitch;
+    // Issue deferred command to copy from the intermediate shared resource to the final GPU resource,
+    // and then execute the commands.
+    commandList->CopyResource(destinationResource, uploadBuffer);
+    commandList->ResourceBarrier(1, &resourceBarrier);
+    THROW_IF_FAILED(commandList->Close());
+    ID3D12CommandList* commandLists[] = { commandList };
+    commandQueue->ExecuteCommandLists(ARRAYSIZE(commandLists), commandLists);
+    WaitForQueueToComplete(commandQueue);
 
-        // Upload the input tensor to the GPU.
-        ::UpdateSubresources(
-            commandList.get(),
-            inputBuffer.get(),
-            uploadBuffer.get(),
-            0,
-            0,
-            1,
-            &tensorSubresourceData);
-
-        commandList->ResourceBarrier(
-            1,
-            &CD3DX12_RESOURCE_BARRIER::Transition(
-                inputBuffer.get(),
-                D3D12_RESOURCE_STATE_COPY_DEST,
-                D3D12_RESOURCE_STATE_UNORDERED_ACCESS
-            )
-        );
-    }
-#endif
-
-
-#if 0
-void Device::RecordOutputReadBack(uint64_t outputsResourceSize)
-{
-    // Copy output to readback heap
-    if (outputsResourceSize != 0)
-    {
-        m_commandList->ResourceBarrier(
-            1,
-            &CD3DX12_RESOURCE_BARRIER::Transition(
-                m_outputsResource->GetResource(),
-                D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                D3D12_RESOURCE_STATE_COPY_SOURCE)
-            );
-
-        m_commandList->CopyBufferRegion(m_downloadBuffer->GetResource(), 0, m_outputsResource->GetResource(), 0, outputsResourceSize);
-
-        m_commandList->ResourceBarrier(
-            1,
-            &CD3DX12_RESOURCE_BARRIER::Transition(
-                m_outputsResource->GetResource(),
-                D3D12_RESOURCE_STATE_COPY_SOURCE,
-                D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
-            );
-    }
+    THROW_IF_FAILED(commandAllocator->Reset());
+    THROW_IF_FAILED(commandList->Reset(commandAllocator, nullptr));
 }
-#endif
 
-#if 0
-std::vector<pydml::TensorData*> DownloadFromDownloadBuffer(
-    uint64_t outputsResourceSize, 
-    std::vector<dml::Expression*>& outputs,
-    std::vector<DmlBufferBinding>& outputBindings
+
+void DownloadTensorData(
+    ID3D12CommandQueue* commandQueue,
+    ID3D12CommandAllocator* commandAllocatar,
+    ID3D12GraphicsCommandList* commandList,
+    ID3D12Resource* sourceResource,
+    std::span<std::byte> destinationData
     )
 {
-    std::vector<pydml::TensorData*> outputData;
+    // Get the size of the resource.
+    ComPtr<ID3D12Device> d3d12Device;
+    THROW_IF_FAILED(commandQueue->GetDevice(IID_PPV_ARGS(d3d12Device.GetAddressOf())));
+    D3D12_RESOURCE_DESC resourceDesc = sourceResource->GetDesc();
+    assert(resourceDesc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER);
+    const size_t dataSizeInBytes = static_cast<size_t>(resourceDesc.Width);
 
-    if (outputsResourceSize != 0)
+    // Create intermediate upload resource visible to both CPU and GPU.
+    ComPtr<ID3D12Resource> downloadBuffer = CreateD3D12ResourceOfByteSize(d3d12Device, dataSizeInBytes, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_FLAG_NONE);
+
+    D3D12_RESOURCE_BARRIER const resourceBarrier =
     {
-        CD3DX12_RANGE readRange(0, static_cast<size_t>(outputsResourceSize));
+        .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+        .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+        .Transition = {
+            .pResource = sourceResource,
+            .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+            .StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            .StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE,
+        },
+    };
 
-        byte* downloadBufferData = nullptr;
+    // Copy GPU data into the download buffer.
+    commandList->ResourceBarrier(1, &resourceBarrier);
+    commandList->CopyResource(downloadBuffer, sourceResource);
+    THROW_IF_FAILED(commandList->Close());
+    ID3D12CommandList* commandLists[] = { commandList };
+    commandQueue->ExecuteCommandLists(static_cast<uint32_t>(std::size(commandLists)), commandLists);
+    WaitForQueueToComplete(commandQueue);
 
-        ThrowIfFailed(m_downloadBuffer->Map(0, &readRange, reinterpret_cast<void**>(&downloadBufferData)));
-
-        for (size_t i = 0; i < outputs.size(); ++i)
-        {
-            auto output = outputs[i];
-
-            if (!output)
-            {
-                // This output tensor is optional (and null)
-                continue;
-            }
-
-            dml::TensorDesc desc = output->GetOutputDesc();
-            DmlBufferTensorDesc bufferDesc = *desc.AsPtr<DML_BUFFER_TENSOR_DESC>();
-
-            auto data = new TensorData(&desc);
-            void* dest = data->Get();
-            const void* src = downloadBufferData + outputBindings[i].offset;
-
-            memcpy(dest, src, static_cast<size_t>(bufferDesc.totalTensorSizeInBytes));
-
-            outputData.push_back(data);
-        }
-
-        m_downloadBuffer->Unmap(0, nullptr);
-    }
-
-    return outputData;
+    // Copy from shared GPU/CPU memory to ordinary system RAM.
+    size_t clampedDataByteSize = std::min(dataSizeInBytes, destinationData.size());
+    std::byte* sourceData = nullptr;
+    D3D12_RANGE range = {0, clampedDataByteSize };
+    THROW_IF_FAILED(downloadBuffer->Map(0, &range, reinterpret_cast<void**>(&sourceData)));
+    memcpy(destinationData.data(), sourceData, clampedDataByteSize);
+    downloadBuffer->Unmap(0, nullptr);
 }
-#endif
-
-#if 0
-void Device::ExecuteCommandListAndWait()
-{
-    ThrowIfFailed(m_commandList->Close());
-
-    ID3D12CommandList* commandLists[] = { m_commandList.Get() };
-    if (m_residencyManager != nullptr)
-    {
-        gpgmm::d3d12::ResidencySet* residencySets[] = { &m_residencySet };
-        m_residencyManager->ExecuteCommandLists(m_commandQueue.Get(), commandLists, residencySets, ARRAYSIZE(commandLists));
-    }
-    else
-    {
-        m_commandQueue->ExecuteCommandLists(ARRAYSIZE(commandLists), commandLists);
-    }
-
-    WaitForQueueToComplete(m_commandQueue.Get());
-
-    ThrowIfFailed(m_commandAllocator->Reset());
-    ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
-
-    if (m_residencyManager != nullptr)
-    {
-        ThrowIfFailed(m_residencySet.Reset());
-    }
-}
-#endif
-
-
-#if 0
-    com_ptr<ID3D12Resource> downloadBuffer;
-    check_hresult(d3D12Device->CreateCommittedResource(
-        &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK),
-        D3D12_HEAP_FLAG_NONE,
-        &CD3DX12_RESOURCE_DESC::Buffer(tensorBufferSize),
-        D3D12_RESOURCE_STATE_COPY_DEST,
-        nullptr,
-        __uuidof(downloadBuffer),
-        downloadBuffer.put_void()));
-
-    commandList->ResourceBarrier(
-        1,
-        &CD3DX12_RESOURCE_BARRIER::Transition(
-            outputBuffer.get(),
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-            D3D12_RESOURCE_STATE_COPY_SOURCE
-        )
-    );
-
-    commandList->CopyResource(downloadBuffer.get(), outputBuffer.get());
-
-    CloseExecuteResetWait(d3D12Device, commandQueue, commandAllocator, commandList);
-
-    D3D12_RANGE tensorBufferRange{ 0, static_cast<SIZE_T>(tensorBufferSize) };
-    FLOAT* outputBufferData{};
-    check_hresult(downloadBuffer->Map(0, &tensorBufferRange, reinterpret_cast<void**>(&outputBufferData)));
-#endif

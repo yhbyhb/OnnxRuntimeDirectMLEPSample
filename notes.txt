@@ -1,4 +1,0 @@
-ADO bug about not flushing https://microsoft.visualstudio.com/OS/_workitems/edit/37322449
-GitHub ORT issue #1 https://github.com/microsoft/onnxruntime/issues/9962
-GitHub ORT issue #2 https://github.com/microsoft/onnxruntime/issues/10279
-

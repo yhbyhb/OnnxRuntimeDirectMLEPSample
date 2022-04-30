@@ -105,8 +105,54 @@ size_t ByteSizeOfOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
 }
 
 
+char const* NameOfOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
+{
+    switch (dataType)
+    {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:   return "undefined";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        return "bool8";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       return "uint8";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        return "int8";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:      return "char8";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      return "uint16";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       return "int16";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     return "float16m10e5s1";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    return "float16m8e7s1";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       return "int32";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      return "uint32";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       return "float32";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      return "uint64";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       return "int64";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      return "float64";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return "float32x2";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return "float64x2";
+    default: return "unknown";
+    }
+}
+
+
+std::string GetInputName(size_t index, Ort::Session const& session)
+{
+    Ort::AllocatorWithDefaultOptions allocator;
+    char* name = session.GetInputName(index, allocator);
+    std::string returnName(name);
+    allocator.Free(name); // Don't leak memory.
+    return returnName;
+}
+
+
+std::string GetOutputName(size_t index, Ort::Session const& session)
+{
+    Ort::AllocatorWithDefaultOptions allocator;
+    char* name = session.GetOutputName(index, allocator);
+    std::string returnName(name);
+    allocator.Free(name); // Don't leak memory.
+    return returnName;
+}
+
+
 ////////////////////////////////////////////////////////////////////////////////
-// Forward declarations for helpers
+// Forward declarations
 
 Ort::Value CreateTensorValueUsingD3DResource(
     ID3D12Device* d3dDevice,
@@ -119,6 +165,7 @@ Ort::Value CreateTensorValueUsingD3DResource(
     /*out*/ void** dmlEpResourceWrapper
 );
 
+
 void UploadTensorData(
     ID3D12CommandQueue* commandQueue,
     ID3D12CommandAllocator* commandAllocator,
@@ -126,6 +173,7 @@ void UploadTensorData(
     ID3D12Resource* destinationResource,
     std::span<const std::byte> sourceData
 );
+
 
 void DownloadTensorData(
     ID3D12CommandQueue* commandQueue,
@@ -136,76 +184,55 @@ void DownloadTensorData(
 );
 
 
-////////////////////////////////////////////////////////////////////////////////
+void PrintValues(std::span<const std::byte> data, ONNXTensorElementDataType dataType);
 
-int main()
+
+////////////////////////////////////////////////////////////////////////////////
+// Main execution
+
+int wmain(int argc, wchar_t* argv[])
 {
-#if 1
-    const wchar_t* modelFilePath = L"Upsample4xOpset11.onnx";
-    const char* modelInputTensorName = "input";
-    const char* modelOutputTensorName = "output";
-    const std::array<int64_t, 4> inputShape = { 1, 3, 100, 100 };
-    const std::array<int64_t, 4> outputShape = { 1, 3, 400, 400 };
-    ONNXTensorElementDataType inputDataType = ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
-    ONNXTensorElementDataType outputDataType = ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
-    using inputDataTypeT = float;
-    using outputDataTypeT = float;
-#elif 1
-    // Squeezenet opset v7 https://github.com/onnx/models/blob/master/vision/classification/squeezenet/README.md
-    const wchar_t* modelFilePath = L"squeezenet/SqueezeNet.onnx";
-    const char* modelInputTensorName = "data_0";
-    const char* modelOutputTensorName = "softmaxout_1";
-    const std::array<int64_t, 4> inputShape = { 1, 3, 224, 224 };
-    const std::array<int64_t, 4> outputShape = { 1, 1000, 1, 1 };
-    ONNXTensorElementDataType inputDataType = ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
-    ONNXTensorElementDataType outputDataType = ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
-    using inputDataTypeT = float;
-    using outputDataTypeT = float;
-#elif 1
-    const wchar_t* modelFilePath = L"OnnxBackendTestData/test_nonzero_example/model.onnx";
-    const char* modelInputTensorName = "condition";
-    const char* modelOutputTensorName = "result";
-    const std::array<int64_t, 2> inputShape = { 2, 2 };
-    const std::array<int64_t, 2> outputShape = { 2, 4 };
-    ONNXTensorElementDataType inputDataType = ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL;
-    ONNXTensorElementDataType outputDataType = ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64;
-    using inputDataTypeT = WrapperClass<bool>;
-    using outputDataTypeT = int64_t;
-#elif 0
-    const wchar_t* modelFilePath = L"OnnxBackendTestData/test_shape/model.onnx";
-    const char* modelInputTensorName = "x";
-    const char* modelOutputTensorName = "y";
-    const std::array<int64_t, 3> inputShape = { 3, 4, 5 };
-    const std::array<int64_t, 1> outputShape = { 3 };
-    ONNXTensorElementDataType inputDataType = ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
-    ONNXTensorElementDataType outputDataType = ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64;
-    using inputDataTypeT = float;
-    using outputDataTypeT = int64_t;
-#endif
+    if (argc <= 1)
+    {
+        printf(
+            "Usage:\n"
+            "   OnnxRuntimeDirectMLCpp.exe SomePath/SomeOnnxModel.onnx\n"
+            "\n"
+            "Try the included Upsample4xOpset11.onnx.\n"
+        );
+        return EXIT_FAILURE;
+    }
+
+    const wchar_t* modelFilePath = argv[1];
 
     LARGE_INTEGER startTime;
     LARGE_INTEGER d3dDeviceCreationTime;
     LARGE_INTEGER sessionCreationTime;
     LARGE_INTEGER tensorCreationTime;
-    LARGE_INTEGER bindingTime;
+    LARGE_INTEGER bindingSynchronizationTime;
     LARGE_INTEGER runStartTime;
     LARGE_INTEGER runTime;
     LARGE_INTEGER runEndTime;
     LARGE_INTEGER synchronizeOutputsTime;
+    LARGE_INTEGER downloadOutputsTime;
     LARGE_INTEGER cpuFrequency;
     QueryPerformanceFrequency(&cpuFrequency);
     QueryPerformanceCounter(&startTime);
 
     try
     {
+        ////////////////////////////////////////
+        // Setup Direct3D.
+        // Yeah, D3D's interface just to upload some resource data is a bit ... verbose.
+        //
         // Note that if you want a specific GPU, you should call EnumAdapters.
         // Otherwise in a system with multiple GPU's (a fast discrete one and a slow
         // integrated one), you might get the slow one depending on the defaults.
-        // todo: change the adapter from nullptr to an explicit EnumAdaptersByGpu call,
+        //
+        // TODO: Change the adapter from nullptr to an explicit EnumAdaptersByGpu call,
         // or EnumAdapters.
         printf("Creating Direct3D device.\n");
 
-        // Yeah, D3D's interface just to upload some resource data is a bit ... verbose.
         ComPtr<ID3D12Device> d3d12Device;
         ComPtr<ID3D12CommandQueue> commandQueue;
         ComPtr<ID3D12CommandAllocator> commandAllocator;
@@ -226,11 +253,13 @@ int main()
         THROW_IF_FAILED(d3d12Device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator)));
         THROW_IF_FAILED(d3d12Device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator.Get(), nullptr, IID_PPV_ARGS(&commandList)));
 
+        ////////////////////////////////////////
+        // Configure the model session options
+
         OrtApi const& ortApi = Ort::GetApi(); // Uses ORT_API_VERSION
         const OrtDmlApi* ortDmlApi;
         THROW_IF_NOT_OK(ortApi.GetExecutionProviderApi("DML", ORT_API_VERSION, reinterpret_cast<const void**>(&ortDmlApi)));
 
-        // ONNX Runtime setup
         Ort::Env ortEnvironment(ORT_LOGGING_LEVEL_WARNING, "DirectML_Direct3D_TensorAllocation_Test"); // Note ORT_LOGGING_LEVEL_VERBOSE is useful too.
         Ort::SessionOptions sessionOptions;
         sessionOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
@@ -238,11 +267,10 @@ int main()
         sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL); // Note ORT_ENABLE_BASIC is useful for debugging.
         ortApi.AddFreeDimensionOverrideByName(sessionOptions, "batch_size", 1);
 
-        if (EXPORT_ORT_FILE)
         // Test export and reload of optimized model.
+        if (EXPORT_ORT_FILE)
         {
             Ort::SessionOptions sessionOptions2(sessionOptions.Clone());
-            //sessionOptions2.AddConfigEntry("ep.dml.disable_graph_fusion", "1");
             sessionOptions2.SetOptimizedModelFilePath(L"optimized.ort");
             if (USE_DML_EXECUTION_PROVIDER)
             {
@@ -258,99 +286,123 @@ int main()
             ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions, 0); // todo: change this to an explicit device id, not just 0 using adapter above.
         }
 
-        printf("Loading model.\n");
+        ////////////////////////////////////////
+        // Load the model
+
+        printf("Loading model '%S'.\n", modelFilePath);
         Ort::Session session = Ort::Session(ortEnvironment, modelFilePath, sessionOptions);
         QueryPerformanceCounter(&sessionCreationTime);
 
         Ort::IoBinding ioBinding = Ort::IoBinding::IoBinding(session);
         const char* memoryInformationName = PASS_TENSORS_AS_D3D_RESOURCES ? "DML" : "Cpu";
         Ort::MemoryInfo memoryInformation(memoryInformationName, OrtAllocatorType::OrtDeviceAllocator, 0, OrtMemType::OrtMemTypeDefault);
-        // Not needed: Ort::Allocator allocator(session, memoryInformation);
+        Ort::Allocator deviceAllocator(session, memoryInformation);
 
-        // Create input tensor.
-        Ort::Value inputTensor(nullptr);
-        std::vector<inputDataTypeT> inputTensorValues(static_cast<size_t>(GetElementCount(inputShape)), inputDataTypeT(0));
-        if constexpr (std::is_same_v<inputDataTypeT, WrapperClass<bool>>) // Why C++, why?... Just let iota work as expected with a wrapping sequence of {false, true, false, true...}.
-        {
-            std::fill(inputTensorValues.begin(), inputTensorValues.end(), inputDataTypeT(1));
-        }
-        else
-        {
-            std::iota(inputTensorValues.begin(), inputTensorValues.end(), inputDataTypeT(0));
-        }
-        ComPtr<IUnknown> inputTensorExecutionProviderWrapper;
+        ////////////////////////////////////////
+        // Create input and output tensors
 
-        if (PASS_TENSORS_AS_D3D_RESOURCES)
-        {
-            ComPtr<ID3D12Resource> inputD3dResource;
-            // Create empty D3D resource for input.
-            inputTensor = CreateTensorValueUsingD3DResource(
-                d3d12Device,
-                *ortDmlApi,
-                memoryInformation,
-                inputShape,
-                inputDataType,
-                ByteSizeOfOnnxTensorElementDataType(inputDataType),
-                /*out*/ &inputD3dResource,
-                /*out*/ IID_PPV_ARGS_Helper(inputTensorExecutionProviderWrapper.GetAddressOf())
-            );
-            UploadTensorData(
-                commandQueue,
-                commandAllocator,
-                commandList,
-                inputD3dResource,
-                std::as_bytes(std::span<inputDataTypeT>(inputTensorValues))
-            );
-        }
-        else // CPU tensor
-        {
-            inputTensor = Ort::Value::CreateTensor<inputDataTypeT>(
-                memoryInformation,
-                reinterpret_cast<inputDataTypeT*>(inputTensorValues.data()),
-                inputTensorValues.size(),
-                inputShape.data(),
-                inputShape.size()
-            );
-        }
+        std::vector<Ort::Value> inputTensors;
+        std::vector<Ort::Value> outputTensors;
+        std::vector<std::vector<std::byte>> inputTensorValues; // Preserve the values since the CPU tensor just lightly wraps them.
+        std::vector<std::vector<std::byte>> outputTensorValues;
+        std::vector<ComPtr<IUnknown>> executionProviderTensorWrappers; // Preserve lifetime of input tensors in the Ort::Value, which doesn't seem to hold a reference.
 
-        // Create output tensor on device memory.
-        Ort::Value outputTensor(nullptr);
-        std::vector<outputDataTypeT> outputTensorValues(static_cast<size_t>(GetElementCount(outputShape)), outputDataTypeT(0));
-        ComPtr<IUnknown> outputTensorEpWrapper;
-        ComPtr<ID3D12Resource> outputD3dResource;
+        size_t const inputCount = session.GetInputCount();
+        size_t const outputCount = session.GetInputCount();
 
-        if (PASS_TENSORS_AS_D3D_RESOURCES)
+        // Loop though inputs and outputs.
+        for (int bindingPass = 0; bindingPass < 2; ++bindingPass)
         {
-            outputTensor = CreateTensorValueUsingD3DResource(
-                d3d12Device,
-                *ortDmlApi,
-                memoryInformation,
-                outputShape,
-                outputDataType,
-                ByteSizeOfOnnxTensorElementDataType(outputDataType),
-                /*out*/ &outputD3dResource,
-                /*out*/ IID_PPV_ARGS_Helper(outputTensorEpWrapper.GetAddressOf())
-            );
-        }
-        else // CPU tensor
-        {
-            outputTensor = Ort::Value::CreateTensor<outputDataTypeT>(
-                memoryInformation,
-                outputTensorValues.data(),
-                outputTensorValues.size(),
-                outputShape.data(),
-                outputShape.size()
-            );
+            bool const isInputStep = (bindingPass == 0);
+            size_t const tensorCount = isInputStep ? inputCount : outputCount;
+
+            for (size_t tensorIndex = 0; tensorIndex < tensorCount; ++tensorIndex)
+            {
+                std::string tensorName = isInputStep ? GetInputName(tensorIndex, session) : GetOutputName(tensorIndex, session);
+                Ort::TypeInfo typeInfo = isInputStep ? session.GetInputTypeInfo(tensorIndex) : session.GetOutputTypeInfo(tensorIndex);
+                if (typeInfo.GetONNXType() != ONNXType::ONNX_TYPE_TENSOR)
+                {
+                    printf("Unknown input type for '%s'\n", tensorName.c_str());
+                    continue; // Can't handle this input type. So skip it.
+                }
+
+                // Get the tensor shape and type.
+                // Note when computing the element count that it's unsafe to call ORT's shapeInfo.GetElementCount()
+                // because you may get a SafeInt overflow if there are free dimensions, which are treated as -1's.
+                // So replace those with 1's first.
+                Ort::Unowned<Ort::TensorTypeAndShapeInfo> shapeInfo = typeInfo.GetTensorTypeAndShapeInfo();
+                ONNXTensorElementDataType const tensorDataType = shapeInfo.GetElementType();
+                std::vector<int64_t> tensorShape = shapeInfo.GetShape();
+                std::for_each(tensorShape.begin(), tensorShape.end(), [](int64_t& i) {i = std::max(i, int64_t(1)); });
+                size_t const tensorElementCount = GetElementCount(tensorShape);
+
+                // Allocate values for tensor.
+                Ort::Value tensor(nullptr);
+                ComPtr<IUnknown> executionProviderTensorWrapper;
+                std::vector<std::byte> tensorValues(tensorElementCount * ByteSizeOfOnnxTensorElementDataType(tensorDataType));
+
+                // TODO: Fill with random values or an increasing sequence depending on data type.
+
+                printf("Binding tensor '%s', %s[%zu].\n", tensorName.c_str(), NameOfOnnxTensorElementDataType(tensorDataType), tensorElementCount);
+
+                if (PASS_TENSORS_AS_D3D_RESOURCES)
+                {
+                    // Create D3D resource for input/output.
+                    ComPtr<ID3D12Resource> d3dResource;
+                    tensor = CreateTensorValueUsingD3DResource(
+                        d3d12Device,
+                        *ortDmlApi,
+                        memoryInformation,
+                        tensorShape,
+                        tensorDataType,
+                        ByteSizeOfOnnxTensorElementDataType(tensorDataType),
+                        /*out*/ &d3dResource,
+                        /*out*/ IID_PPV_ARGS_Helper(executionProviderTensorWrapper.GetAddressOf())
+                    );
+                    executionProviderTensorWrappers.push_back(std::move(executionProviderTensorWrapper));
+
+                    if (isInputStep)
+                    {
+                        // Upload it to the GPU, and wait for completion. Note a more efficient approach would enqueue and upload
+                        // them all at once rather than waiting for each one to finish.
+                        UploadTensorData(commandQueue, commandAllocator, commandList, d3dResource, tensorValues);
+                    }
+                }
+                else // CPU tensor
+                {
+                    tensor = Ort::Value::CreateTensor(
+                        memoryInformation,
+                        reinterpret_cast<void*>(tensorValues.data()),
+                        tensorValues.size(),
+                        tensorShape.data(),
+                        tensorShape.size(),
+                        tensorDataType
+                    );
+                }
+
+                if (isInputStep)
+                {
+                    ioBinding.BindInput(tensorName.c_str(), tensor);
+                    inputTensors.push_back(std::move(tensor));
+                    inputTensorValues.push_back(std::move(tensorValues));
+                }
+                else // Output
+                {
+                    ioBinding.BindOutput(tensorName.c_str(), tensor);
+                    outputTensors.push_back(std::move(tensor));
+                    outputTensorValues.push_back(std::move(tensorValues));
+                }
+            }
         }
 
         QueryPerformanceCounter(&tensorCreationTime);
 
-        ////////////////////////////////////////
-        // Bind the tensor inputs to the model, and run it.
-        ioBinding.BindInput(modelInputTensorName, inputTensor);
-        ioBinding.BindOutput(modelOutputTensorName, outputTensor);
+        // Wait for any inputs to finish uploading, in case the sources were CPU tensors.
         ioBinding.SynchronizeInputs();
-        QueryPerformanceCounter(&bindingTime);
+        QueryPerformanceCounter(&bindingSynchronizationTime);
+
+        ////////////////////////////////////////
+        // Begin execution
 
         Ort::RunOptions runOptions;
 
@@ -363,16 +415,27 @@ int main()
         runEndTime = synchronizeOutputsTime;
         printf("Finished execution.\n");
 
-        if (PASS_TENSORS_AS_D3D_RESOURCES)
+        ////////////////////////////////////////
+        // Read computed outputs
+
+        if (PASS_TENSORS_AS_D3D_RESOURCES && !executionProviderTensorWrappers.empty())
         {
+            ComPtr<ID3D12Resource> d3dResource;
+            THROW_IF_NOT_OK(ortDmlApi->GetD3D12ResourceFromAllocation(deviceAllocator, executionProviderTensorWrappers.front(), &d3dResource));
             DownloadTensorData(
                 commandQueue,
                 commandAllocator,
                 commandList,
-                outputD3dResource,
-                std::as_writable_bytes(std::span<outputDataTypeT>(outputTensorValues))
+                d3dResource,
+                outputTensorValues.front()
             );
         }
+        QueryPerformanceCounter(&downloadOutputsTime);
+        runEndTime = synchronizeOutputsTime;
+        printf("Downloaded output tensor.\n");
+
+        ////////////////////////////////////////
+        // Print timings
 
         auto printDuration = [=](char const* message, LARGE_INTEGER nextTime, LARGE_INTEGER previousTime = {}) mutable
         {
@@ -390,28 +453,19 @@ int main()
         printDuration("D3D device creation time ....", d3dDeviceCreationTime);
         printDuration("session creation time .......", sessionCreationTime);
         printDuration("tensor creation time ........", tensorCreationTime);
-        printDuration("binding time ................", bindingTime);
+        printDuration("binding synchronization time ", bindingSynchronizationTime);
         printDuration("run time ....................", runTime);
         printDuration("synchronize outputs time ....", synchronizeOutputsTime);
         printDuration("run+synchronize time.........", runEndTime, runStartTime);
         printDuration("total time...................", synchronizeOutputsTime, startTime);
 
         ////////////////////////////////////////
-        // Print the first 10 and top 10 results.
-        printf("First 10 results:\n");
-        for (int i = 0; i <= std::min(outputTensorValues.size(), size_t(10)); ++i)
-        {
-            printf("    output[%d] = %f\n", i, outputTensorValues[i]);
-        }
+        // Print output values
 
-        printf("Top 10 results:\n");
-        size_t maxSortSize = std::min(size_t(10'000), outputTensorValues.size());
-        std::vector<uint32_t> indices(maxSortSize, 0);
-        std::iota(indices.begin(), indices.end(), 0);
-        sort(indices.begin(), indices.end(), [&](uint32_t a, uint32_t b) { return (outputTensorValues[a] > outputTensorValues[b]);});
-        for (size_t i = 0, ci = std::min(indices.size(), size_t(10)); i <= ci; ++i)
+        if (!outputTensorValues.empty())
         {
-            printf("    output[%d] = %f\n", indices[i], outputTensorValues[indices[i]]);
+            // TODO: Honor the actual data type.
+            // PrintValues(outputTensorValues, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
         }
     }
     catch (Ort::Exception const& exception)
@@ -425,7 +479,32 @@ int main()
         return EXIT_FAILURE;
     }
 
-    return 0;
+    return EXIT_SUCCESS;
+}
+
+
+void PrintValues(std::span<const std::byte> data, ONNXTensorElementDataType dataType)
+{
+    // TODO: Print values depending on data type.
+#if 0
+    ////////////////////////////////////////
+    // Print the first 10 and top 10 results.
+    printf("First 10 results:\n");
+    for (int i = 0; i <= std::min(typedData.size(), size_t(10)); ++i)
+    {
+        printf("    output[%d] = %f\n", i, typedData[i]);
+    }
+
+    printf("Top 10 results:\n");
+    size_t maxSortSize = std::min(size_t(10'000), typedData.size());
+    std::vector<uint32_t> indices(maxSortSize, 0);
+    std::iota(indices.begin(), indices.end(), 0);
+    sort(indices.begin(), indices.end(), [&](uint32_t a, uint32_t b) { return (typedData[a] > typedData[b]); });
+    for (size_t i = 0, ci = std::min(indices.size(), size_t(10)); i <= ci; ++i)
+    {
+        printf("    output[%d] = %f\n", indices[i], typedData[indices[i]]);
+    }
+#endif
 }
 
 

@@ -462,10 +462,10 @@ int wmain(int argc, wchar_t* argv[])
         ////////////////////////////////////////
         // Print output values
 
-        if (!outputTensorValues.empty())
+        if (!outputTensors.empty() && !outputTensorValues.empty() && outputTensors.front().IsTensor())
         {
-            // TODO: Honor the actual data type.
-            // PrintValues(outputTensorValues, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
+            Ort::TensorTypeAndShapeInfo typeAndShapeInfo = outputTensors.front().GetTensorTypeAndShapeInfo();
+            PrintValues(outputTensorValues.front(), typeAndShapeInfo.GetElementType());
         }
     }
     catch (Ort::Exception const& exception)
@@ -485,9 +485,16 @@ int wmain(int argc, wchar_t* argv[])
 
 void PrintValues(std::span<const std::byte> data, ONNXTensorElementDataType dataType)
 {
-    // TODO: Print values depending on data type.
-#if 0
-    ////////////////////////////////////////
+    if (dataType != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT)
+    {
+        printf("Can only print float32 data output, not %s\n", NameOfOnnxTensorElementDataType(dataType));
+        return;
+    }
+
+    // TODO: Support other data types.
+
+    std::span<const float> typedData = { reinterpret_cast<float const*>(data.data()), data.size() / sizeof(float) };
+
     // Print the first 10 and top 10 results.
     printf("First 10 results:\n");
     for (int i = 0; i <= std::min(typedData.size(), size_t(10)); ++i)
@@ -504,7 +511,6 @@ void PrintValues(std::span<const std::byte> data, ONNXTensorElementDataType data
     {
         printf("    output[%d] = %f\n", indices[i], typedData[indices[i]]);
     }
-#endif
 }
 
 

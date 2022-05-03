@@ -23,9 +23,9 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Configuration
 
-#define USE_DML_EXECUTION_PROVIDER true
-#define PASS_TENSORS_AS_D3D_RESOURCES true
-#define EXPORT_ORT_FILE false
+constexpr bool USE_DML_EXECUTION_PROVIDER = true;
+constexpr bool PASS_TENSORS_AS_D3D_RESOURCES = true;
+constexpr bool EXPORT_ORT_FILE = false;
 
 static_assert(USE_DML_EXECUTION_PROVIDER == true || PASS_TENSORS_AS_D3D_RESOURCES == false); // CPU can't accept D3D resources.
 
@@ -520,14 +520,15 @@ ComPtr<ID3D12Resource> CreateD3D12ResourceOfByteSize(
     D3D12_HEAP_TYPE heapType = D3D12_HEAP_TYPE_DEFAULT,
     D3D12_RESOURCE_STATES resourceState = D3D12_RESOURCE_STATE_COMMON,
     D3D12_RESOURCE_FLAGS resourceFlags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
-)
+    )
 {
     resourceByteSize = std::max(resourceByteSize, size_t(DML_MINIMUM_BUFFER_TENSOR_ALIGNMENT));
 
     // DML needs the resources' sizes to be a multiple of 4 bytes
     (resourceByteSize += 3) &= ~3;
 
-    D3D12_HEAP_PROPERTIES const heapProperties = {
+    D3D12_HEAP_PROPERTIES const heapProperties =
+    {
         .Type = heapType, // Default to D3D12_HEAP_TYPE_DEFAULT.
         .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
         .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
@@ -568,7 +569,7 @@ ComPtr<ID3D12Resource> CreateD3D12ResourceForTensor(
     ID3D12Device* d3dDevice,
     size_t elementByteSize,
     std::span<const int64_t> tensorDimensions
-)
+    )
 {
     // Try to allocate the backing memory for the caller
     auto bufferSize = GetElementCount(tensorDimensions);
@@ -692,7 +693,8 @@ void UploadTensorData(
     {
         .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
         .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
-        .Transition = {
+        .Transition =
+        {
             .pResource = destinationResource,
             .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
             .StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
@@ -736,7 +738,8 @@ void DownloadTensorData(
     {
         .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
         .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
-        .Transition = {
+        .Transition =
+        {
             .pResource = sourceResource,
             .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
             .StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS,

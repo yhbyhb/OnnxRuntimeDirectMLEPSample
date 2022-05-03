@@ -50,6 +50,9 @@ using BaseType =
         >
     >;
 
+using float32_t = float;
+using float64_t = double;
+
 
 // Standard IEEE 16-bit floating type.
 // This class contains just enough logic for conversion, not general math.
@@ -59,9 +62,12 @@ struct float16m10e5s1_t
     float16m10e5s1_t(const float16m10e5s1_t&) = default;
     float16m10e5s1_t(float16m10e5s1_t&&) = default;
 
-    static uint32_t constexpr float16exponentCount = 10;
-    static uint32_t constexpr float32exponentCount = 23;
-    static uint32_t constexpr float32to16exponentDifference = float32exponentCount - float16exponentCount;
+    static uint32_t constexpr float16mantissaCount = 10;
+    static uint32_t constexpr float32mantissaCount = 23;
+    static int32_t  constexpr float32to16mantissaCountDifference = float32mantissaCount - float16mantissaCount;
+    static uint32_t constexpr float16exponentCount = 5;
+    static uint32_t constexpr float32exponentCount = 8;
+    static uint32_t constexpr float32to16exponentAdjustment = 15 - 127;
     static uint32_t constexpr float16signMask = 0b1'00000'0000000000;
     static uint32_t constexpr float32signMask = 0b10000000'00000000'00000000'00000000;
     static uint32_t constexpr float16exponentMask = 0b0'11111'0000000000;
@@ -75,10 +81,13 @@ struct float16m10e5s1_t
     {
         // Shift the mantissa, exponent, and sign from the 32-bit locations to 16-bit.
         // Sature the exponent if greater than float16 can represent.
+        // TODO: Handle infinity and denorms.
         uint32_t const float32bitValue = reinterpret_cast<uint32_t&>(floatValue);
         uint32_t const sign = (float32bitValue >> 16) & float16signMask;
-        uint32_t const mantissaAndExponent = (float32bitValue >> float32to16exponentDifference) & (float16mantissaMask|float16exponentMask);
-        uint32_t const float16bitValue = mantissaAndExponent | sign | ((float32bitValue & float32overflow16exponentmask) ? float16exponentMask : 0);
+        uint32_t const mantissaAndExponent = ((float32bitValue >> float32to16mantissaCountDifference) + (float32to16exponentAdjustment << float16mantissaCount)); // & (float16mantissaMask | float16exponentMask);
+        uint32_t const float16denormMask = (float32bitValue & float32exponentMask) ? (float16mantissaMask | float16exponentMask) : 0;
+        uint32_t const float16saturationMask = (float32bitValue & float32overflow16exponentmask) ? float16exponentMask : 0;
+        uint32_t const float16bitValue = (mantissaAndExponent & float16denormMask) | float16saturationMask | sign;
         value = uint16_t(float16bitValue);
     }
 
@@ -92,10 +101,13 @@ struct float16m10e5s1_t
 
     operator float() const noexcept
     {
+        // TODO: Handle infinity and denorms.
         uint32_t const float16bitValue = value;
         uint32_t const sign = (float16bitValue << 16) & float32signMask;
-        uint32_t const mantissaAndExponent = (float16bitValue << float32to16exponentDifference) & (float32mantissaMask | float32exponentMask);
-        uint32_t const float32bitValue = mantissaAndExponent | sign | ((mantissaAndExponent >= float32saturated16exponentmask) ? float32exponentMask : 0);
+        uint32_t const mantissaAndExponent = ((float16bitValue << float32to16mantissaCountDifference) - (float32to16exponentAdjustment << float32mantissaCount)) & (float32mantissaMask | float32exponentMask);
+        uint32_t const float32denormMask = (float16bitValue & float16exponentMask) ? (float32mantissaMask | float32exponentMask) : 0;
+        uint32_t const float32saturationMask = ((float16bitValue & float16exponentMask) == float16exponentMask) ? float32exponentMask : 0;
+        uint32_t const float32bitValue = (mantissaAndExponent & float32denormMask) | float32saturationMask | sign;
         float floatValue = 0.0;
         reinterpret_cast<uint32_t&>(floatValue) = float32bitValue;
         return floatValue;
@@ -166,6 +178,32 @@ struct ComPtr : public Microsoft::WRL::ComPtr<T>
 };
 
 
+size_t IsSupportedOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
+{
+    switch (dataType)
+    {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:   return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:      return false;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return false; // 32*2
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return false;
+    default: return 1;
+    }
+}
+
+
 size_t ByteSizeOfOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
 {
     switch (dataType)
@@ -200,7 +238,7 @@ char const* NameOfOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        return "bool8";
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       return "uint8";
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        return "int8";
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:      return "char8";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:      return "char8[]";
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      return "uint16";
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       return "int16";
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     return "float16m10e5s1";
@@ -267,15 +305,43 @@ ScalarUnion ReadTensorElementOfDataType(void const* data, ONNXTensorElementDataT
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    return ScalarUnion{ .f = *reinterpret_cast<float16m7e8s1_t const*>(data) };
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       return ScalarUnion{ .i = *reinterpret_cast<int32_t const*>(data) };
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      return ScalarUnion{ .u = *reinterpret_cast<uint32_t const*>(data) };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       return ScalarUnion{ .f = *reinterpret_cast<float const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       return ScalarUnion{ .f = *reinterpret_cast<float32_t const*>(data) };
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      return ScalarUnion{ .u = *reinterpret_cast<uint64_t const*>(data) };
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       return ScalarUnion{ .i = *reinterpret_cast<int64_t const*>(data) };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      return ScalarUnion{ .f = *reinterpret_cast<double const*>(data) };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return ScalarUnion{ .f = reinterpret_cast<std::pair<float, float> const*>(data)->first };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return ScalarUnion{ .f = reinterpret_cast<std::pair<double, double> const*>(data)->first };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      return ScalarUnion{ .f = *reinterpret_cast<float64_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return ScalarUnion{ .f = reinterpret_cast<std::pair<float32_t, float32_t> const*>(data)->first };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return ScalarUnion{ .f = reinterpret_cast<std::pair<float64_t, float64_t> const*>(data)->first };
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:
     default: return ScalarUnion{ .u = 0 };
+    }
+}
+
+
+// Read the data at the given pointer as the type, expanding it to 64 bits.
+template <typename T>
+void WriteTensorElementOfDataType(void* data, ONNXTensorElementDataType dataType, T newValue)
+{
+    switch (dataType)
+    {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        *reinterpret_cast<bool*>(data) = static_cast<bool>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       *reinterpret_cast<uint8_t*>(data) = static_cast<uint8_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        *reinterpret_cast<int8_t*>(data) = static_cast<int8_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      *reinterpret_cast<uint16_t*>(data) = static_cast<uint16_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       *reinterpret_cast<int16_t*>(data) = static_cast<int16_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     *reinterpret_cast<float16m10e5s1_t*>(data) = static_cast<float16m10e5s1_t>(float32_t(newValue)); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    *reinterpret_cast<float16m7e8s1_t*>(data) = static_cast<float16m7e8s1_t>(float32_t(newValue)); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       *reinterpret_cast<int32_t*>(data) = static_cast<int32_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      *reinterpret_cast<uint32_t*>(data) = static_cast<uint32_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       *reinterpret_cast<float32_t*>(data) = static_cast<float>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      *reinterpret_cast<uint64_t*>(data) = static_cast<uint64_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       *reinterpret_cast<int64_t*>(data) = static_cast<int64_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      *reinterpret_cast<float64_t*>(data) = static_cast<double>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   reinterpret_cast<std::pair<float32_t, float32_t>*>(data)->first = static_cast<float32_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  reinterpret_cast<std::pair<float64_t, float64_t>*>(data)->first = static_cast<float64_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:
+    default: break; // Do nothing.
     }
 }
 
@@ -384,7 +450,9 @@ void DownloadTensorData(
 );
 
 
-void PrintValues(std::span<const std::byte> data, ONNXTensorElementDataType dataType);
+void PrintFirstNValues(std::span<const std::byte> data, size_t n, ONNXTensorElementDataType dataType);
+void PrintTopNValues(std::span<const std::byte> data, size_t n, ONNXTensorElementDataType dataType);
+void GenerateValueSequence(std::span<std::byte> data, ONNXTensorElementDataType dataType);
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -483,7 +551,7 @@ int wmain(int argc, wchar_t* argv[])
         if (USE_DML_EXECUTION_PROVIDER)
         {
             printf("Adding the DirectML execution provider.\n");
-            ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions, 0); // todo: change this to an explicit device id, not just 0 using adapter above.
+            ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions, 0); // TODO: Change this to an explicit device id, not just 0 using adapter above.
         }
 
         ////////////////////////////////////////
@@ -505,7 +573,8 @@ int wmain(int argc, wchar_t* argv[])
         std::vector<Ort::Value> outputTensors;
         std::vector<std::vector<std::byte>> inputTensorValues; // Preserve the values since the CPU tensor just lightly wraps them.
         std::vector<std::vector<std::byte>> outputTensorValues;
-        std::vector<ComPtr<IUnknown>> executionProviderTensorWrappers; // Preserve lifetime of input tensors in the Ort::Value, which doesn't seem to hold a reference.
+        std::vector<ComPtr<IUnknown>> inputTensorWrappers; // Preserve lifetime of input tensors in the Ort::Value, which doesn't seem to hold a reference.
+        std::vector<ComPtr<IUnknown>> outputTensorWrappers; // Preserve lifetime of input tensors in the Ort::Value, which doesn't seem to hold a reference.
 
         size_t const inputCount = session.GetInputCount();
         size_t const outputCount = session.GetOutputCount();
@@ -522,8 +591,8 @@ int wmain(int argc, wchar_t* argv[])
                 Ort::TypeInfo typeInfo = isInputStep ? session.GetInputTypeInfo(tensorIndex) : session.GetOutputTypeInfo(tensorIndex);
                 if (typeInfo.GetONNXType() != ONNXType::ONNX_TYPE_TENSOR)
                 {
-                    printf("Unknown input type for '%s'\n", tensorName.c_str());
-                    continue; // Can't handle this input type. So skip it.
+                    printf("Unknown binding type for '%s'\n", tensorName.c_str());
+                    continue; // Can't handle this type. So skip it.
                 }
 
                 // Get the tensor shape and type.
@@ -532,6 +601,12 @@ int wmain(int argc, wchar_t* argv[])
                 // So replace those with 1's first.
                 Ort::Unowned<Ort::TensorTypeAndShapeInfo> shapeInfo = typeInfo.GetTensorTypeAndShapeInfo();
                 ONNXTensorElementDataType const tensorDataType = shapeInfo.GetElementType();
+                if (!IsSupportedOnnxTensorElementDataType(tensorDataType))
+                {
+                    printf("Unsupported tensor data type %d '%s' for '%s'\n", int32_t(tensorDataType), NameOfOnnxTensorElementDataType(tensorDataType), tensorName.c_str());
+                    continue; // Can't handle this type. So skip it.
+                }
+
                 std::vector<int64_t> tensorShape = shapeInfo.GetShape();
                 std::for_each(tensorShape.begin(), tensorShape.end(), [](int64_t& i) {i = std::max(i, int64_t(1)); });
                 size_t const tensorElementCount = GetElementCount(tensorShape);
@@ -541,7 +616,11 @@ int wmain(int argc, wchar_t* argv[])
                 ComPtr<IUnknown> executionProviderTensorWrapper;
                 std::vector<std::byte> tensorValues(tensorElementCount * ByteSizeOfOnnxTensorElementDataType(tensorDataType));
 
-                // TODO: Fill with random values or an increasing sequence depending on data type.
+                // Fill tensor with an increasing sequence.
+                if (isInputStep)
+                {
+                    GenerateValueSequence(/*out*/ tensorValues, tensorDataType);
+                }
 
                 char const* inputOrOutputString = isInputStep ? "input" : "output";
                 printf("Binding %s tensor '%s', %s[%zu].\n", inputOrOutputString, tensorName.c_str(), NameOfOnnxTensorElementDataType(tensorDataType), tensorElementCount);
@@ -560,7 +639,6 @@ int wmain(int argc, wchar_t* argv[])
                         /*out*/ &d3dResource,
                         /*out*/ IID_PPV_ARGS_Helper(executionProviderTensorWrapper.GetAddressOf())
                     );
-                    executionProviderTensorWrappers.push_back(std::move(executionProviderTensorWrapper));
 
                     if (isInputStep)
                     {
@@ -586,12 +664,14 @@ int wmain(int argc, wchar_t* argv[])
                     ioBinding.BindInput(tensorName.c_str(), tensor);
                     inputTensors.push_back(std::move(tensor));
                     inputTensorValues.push_back(std::move(tensorValues));
+                    inputTensorWrappers.push_back(std::move(executionProviderTensorWrapper));
                 }
                 else // Output
                 {
                     ioBinding.BindOutput(tensorName.c_str(), tensor);
                     outputTensors.push_back(std::move(tensor));
                     outputTensorValues.push_back(std::move(tensorValues));
+                    outputTensorWrappers.push_back(std::move(executionProviderTensorWrapper));
                 }
             }
         }
@@ -619,18 +699,28 @@ int wmain(int argc, wchar_t* argv[])
         ////////////////////////////////////////
         // Read computed outputs
 
-        if (PASS_TENSORS_AS_D3D_RESOURCES && !executionProviderTensorWrappers.empty())
+        size_t const outputTensorCount = outputTensors.size();
+        assert(outputTensors.size() == outputTensorValues.size());
+
+        // If GPU outputs, then read the values back from the device.
+        // If CPU outputs, then the values were already written in-place to outputTensorValues by ONNX Runtime.
+        if (PASS_TENSORS_AS_D3D_RESOURCES)
         {
-            ComPtr<ID3D12Resource> d3dResource;
-            THROW_IF_NOT_OK(ortDmlApi->GetD3D12ResourceFromAllocation(deviceAllocator, executionProviderTensorWrappers.front(), &d3dResource));
-            DownloadTensorData(
-                commandQueue,
-                commandAllocator,
-                commandList,
-                d3dResource,
-                outputTensorValues.front()
-            );
+            for (size_t i = 0; i < outputTensorCount; ++i)
+            {
+                assert(outputTensors[i].IsTensor());
+                ComPtr<ID3D12Resource> d3dResource;
+                THROW_IF_NOT_OK(ortDmlApi->GetD3D12ResourceFromAllocation(deviceAllocator, outputTensorWrappers[i], &d3dResource));
+                DownloadTensorData(
+                    commandQueue,
+                    commandAllocator,
+                    commandList,
+                    d3dResource,
+                    outputTensorValues[i]
+                );
+            }
         }
+
         QueryPerformanceCounter(&downloadOutputsTime);
         runEndTime = synchronizeOutputsTime;
         printf("Downloaded output tensor.\n");
@@ -663,18 +753,21 @@ int wmain(int argc, wchar_t* argv[])
         ////////////////////////////////////////
         // Print output values
 
-        for (size_t i = 0; i < outputCount; ++i)
+        size_t const inputTensorCount = outputTensors.size();
+        for (size_t i = 0; i < inputTensorCount; ++i)
         {
+            assert(inputTensors[i].IsTensor());
+            printf("Input #%zu:\n", i);
+            Ort::TensorTypeAndShapeInfo typeAndShapeInfo = inputTensors[i].GetTensorTypeAndShapeInfo();
+            PrintFirstNValues(inputTensorValues[i], 10, typeAndShapeInfo.GetElementType());
+        }
+        for (size_t i = 0; i < outputTensorCount; ++i)
+        {
+            assert(outputTensors[i].IsTensor());
             printf("Output #%zu:\n", i);
-            if (i < outputTensors.size() && i < outputTensorValues.size() && outputTensors[i].IsTensor())
-            {
-                Ort::TensorTypeAndShapeInfo typeAndShapeInfo = outputTensors[i].GetTensorTypeAndShapeInfo();
-                PrintValues(outputTensorValues[i], typeAndShapeInfo.GetElementType());
-            }
-            else
-            {
-                printf("    Not a tensor.\n");
-            }
+            Ort::TensorTypeAndShapeInfo typeAndShapeInfo = outputTensors[i].GetTensorTypeAndShapeInfo();
+            PrintFirstNValues(outputTensorValues[i], 10, typeAndShapeInfo.GetElementType());
+            PrintTopNValues(outputTensorValues[i], 10, typeAndShapeInfo.GetElementType());
         }
     }
     catch (Ort::Exception const& exception)
@@ -692,53 +785,77 @@ int wmain(int argc, wchar_t* argv[])
 }
 
 
-void PrintValues(std::span<const std::byte> data, ONNXTensorElementDataType dataType)
+void GenerateValueSequence(std::span<std::byte> data, ONNXTensorElementDataType dataType)
 {
     size_t const bytesPerElement = ByteSizeOfOnnxTensorElementDataType(dataType);
     size_t const elementCount = data.size_bytes() / bytesPerElement;
 
-    char numberBuffer[20];
+    for (size_t i = 0, ci = elementCount; i < ci; ++i)
+    {
+        assert(&data[i * bytesPerElement] < data.data() + data.size());
+        WriteTensorElementOfDataType<size_t>(&data[i * bytesPerElement], dataType, i);
+    }
+}
+
+
+void PrintFirstNValues(std::span<const std::byte> data, size_t n, ONNXTensorElementDataType dataType)
+{
+    size_t const bytesPerElement = ByteSizeOfOnnxTensorElementDataType(dataType);
+    size_t const elementCount = data.size_bytes() / bytesPerElement;
+    n = std::min(n, elementCount);
+
+    char numberBuffer[40];
 
     // Print the first 10 and top 10 results.
-    printf("  First 10 results:\n");
-    for (size_t i = 0, ci = std::min(elementCount, size_t(10)); i < ci; ++i)
+    printf("  First %zu/%zu results:\n", n, elementCount);
+    for (size_t i = 0; i < n; ++i)
     {
         FormatTypedElement(&data[i * bytesPerElement], dataType, /*out*/ numberBuffer);
-        printf("    output[%zu] = %s\n", i, numberBuffer);
+        printf("    element[%zu] = %s\n", i, numberBuffer);
     }
-    
+}
+
+
+void PrintTopNValues(std::span<const std::byte> data, size_t n, ONNXTensorElementDataType dataType)
+{
+    size_t const bytesPerElement = ByteSizeOfOnnxTensorElementDataType(dataType);
+    size_t const elementCount = data.size_bytes() / bytesPerElement;
+    n = std::min(n, elementCount);
+
+    char numberBuffer[40];
+
     size_t maxSortSize = 10'000;
-    if (elementCount <= maxSortSize)
-    {
-        printf("  Top 10 results:\n");
+    if (elementCount > maxSortSize)
+        return;
 
-        std::vector<uint32_t> indices(elementCount, 0);
-        std::iota(indices.begin(), indices.end(), 0);
+    printf("  Top %zu/%zu results:\n", n, elementCount);
 
-        std::byte const* dataPointer = data.data();
-        // Determine whether the data type is signed ahead of time so that unsigned comparisons
-        // correctly place positive numbers before negative ones. All comparisons regardless of
-        // data type are done bitwise (which is safe even for floating point numbers).
-        uint64_t const signInversion = IsSignedTensorElementDataType(dataType) ? (uint64_t(1) << 63) : 0;
+    std::vector<uint32_t> indices(elementCount, 0);
+    std::iota(indices.begin(), indices.end(), 0);
 
-        sort(
-            indices.begin(),
-            indices.end(),
-            [&, dataPointer, bytesPerElement, dataType](uint32_t a, uint32_t b)
-            {
-                ScalarUnion valueA = ReadTensorElementOfDataType(&dataPointer[a * bytesPerElement], dataType);
-                ScalarUnion valueB = ReadTensorElementOfDataType(&dataPointer[b * bytesPerElement], dataType);
-                valueA.u ^= signInversion;
-                valueB.u ^= signInversion;
-                return valueA.u > valueB.u;
-            }
-        );
+    std::byte const* dataPointer = data.data();
+    // Determine whether the data type is signed ahead of time so that unsigned comparisons
+    // correctly place positive numbers before negative ones. All comparisons regardless of
+    // data type are done bitwise (which is safe even for floating point numbers).
+    uint64_t const signInversion = IsSignedTensorElementDataType(dataType) ? (uint64_t(1) << 63) : 0;
 
-        for (size_t i = 0, ci = std::min(indices.size(), size_t(10)); i < ci; ++i)
+    sort(
+        indices.begin(),
+        indices.end(),
+        [&, dataPointer, bytesPerElement, dataType](uint32_t a, uint32_t b)
         {
-            FormatTypedElement(&data[indices[i] * bytesPerElement], dataType, /*out*/ numberBuffer);
-            printf("    output[%u] = %s\n", indices[i], numberBuffer);
+            ScalarUnion valueA = ReadTensorElementOfDataType(&dataPointer[a * bytesPerElement], dataType);
+            ScalarUnion valueB = ReadTensorElementOfDataType(&dataPointer[b * bytesPerElement], dataType);
+            valueA.u ^= signInversion;
+            valueB.u ^= signInversion;
+            return valueA.u > valueB.u;
         }
+    );
+
+    for (size_t i = 0; i < n; ++i)
+    {
+        FormatTypedElement(&data[indices[i] * bytesPerElement], dataType, /*out*/ numberBuffer);
+        printf("    element[%u] = %s\n", indices[i], numberBuffer);
     }
 }
 

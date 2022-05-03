@@ -11,6 +11,8 @@
 #include <span>
 #include <optional>
 #include <memory>
+#include <charconv>
+#include <assert.h>
 #include <assert.h>
 
 #include <windows.h>
@@ -47,6 +49,91 @@ using BaseType =
             >
         >
     >;
+
+
+// Standard IEEE 16-bit floating type.
+// This class contains just enough logic for conversion, not general math.
+struct float16m10e5s1_t
+{
+    float16m10e5s1_t() = default;
+    float16m10e5s1_t(const float16m10e5s1_t&) = default;
+    float16m10e5s1_t(float16m10e5s1_t&&) = default;
+
+    static uint32_t constexpr float16exponentCount = 10;
+    static uint32_t constexpr float32exponentCount = 23;
+    static uint32_t constexpr float32to16exponentDifference = float32exponentCount - float16exponentCount;
+    static uint32_t constexpr float16signMask = 0b1'00000'0000000000;
+    static uint32_t constexpr float32signMask = 0b10000000'00000000'00000000'00000000;
+    static uint32_t constexpr float16exponentMask = 0b0'11111'0000000000;
+    static uint32_t constexpr float16mantissaMask = 0b0'00000'1111111111;
+    static uint32_t constexpr float32exponentMask = 0b01111111'10000000'00000000'00000000;
+    static uint32_t constexpr float32mantissaMask = 0b00000000'01111111'11111111'11111111;
+    static uint32_t constexpr float32overflow16exponentmask = 0b01110000'00000000'00000000'00000000; // The exponent bits that would overflow float16.
+    static uint32_t constexpr float32saturated16exponentmask = 0b00001111'11111111'11111111'11111111; // The saturated float16 exponent and mantissa in float32.
+
+    float16m10e5s1_t(float floatValue) noexcept
+    {
+        // Shift the mantissa, exponent, and sign from the 32-bit locations to 16-bit.
+        // Sature the exponent if greater than float16 can represent.
+        uint32_t const float32bitValue = reinterpret_cast<uint32_t&>(floatValue);
+        uint32_t const sign = (float32bitValue >> 16) & float16signMask;
+        uint32_t const mantissaAndExponent = (float32bitValue >> float32to16exponentDifference) & (float16mantissaMask|float16exponentMask);
+        uint32_t const float16bitValue = mantissaAndExponent | sign | ((float32bitValue & float32overflow16exponentmask) ? float16exponentMask : 0);
+        value = uint16_t(float16bitValue);
+    }
+
+    float16m10e5s1_t& operator =(const float16m10e5s1_t&) = default;
+
+    inline float16m10e5s1_t& operator =(float floatValue) noexcept
+    {
+        new(this) float16m10e5s1_t(floatValue);
+        return *this;
+    }
+
+    operator float() const noexcept
+    {
+        uint32_t const float16bitValue = value;
+        uint32_t const sign = (float16bitValue << 16) & float32signMask;
+        uint32_t const mantissaAndExponent = (float16bitValue << float32to16exponentDifference) & (float32mantissaMask | float32exponentMask);
+        uint32_t const float32bitValue = mantissaAndExponent | sign | ((mantissaAndExponent >= float32saturated16exponentmask) ? float32exponentMask : 0);
+        float floatValue = 0.0;
+        reinterpret_cast<uint32_t&>(floatValue) = float32bitValue;
+        return floatValue;
+    }
+
+    uint16_t value;
+};
+
+
+// Truncated IEEE 32-bit floating type to 16-bits (so called "brain float").
+struct float16m7e8s1_t
+{
+    float16m7e8s1_t() = default;
+    float16m7e8s1_t(const float16m7e8s1_t&) = default;
+    float16m7e8s1_t(float16m7e8s1_t&&) = default;
+
+    float16m7e8s1_t(float floatValue) noexcept
+    {
+        value = reinterpret_cast<uint32_t&>(floatValue) >> 16;
+    }
+
+    float16m7e8s1_t& operator =(const float16m7e8s1_t&) = default;
+
+    inline float16m7e8s1_t& operator =(float floatValue) noexcept
+    {
+        new(this) float16m7e8s1_t(floatValue);
+        return *this;
+    }
+
+    operator float() const noexcept
+    {
+        float floatValue = 0.0;
+        reinterpret_cast<uint32_t&>(floatValue) = value << 16;
+        return floatValue;
+    }
+
+    uint16_t value;
+};
 
 
 template <typename T>
@@ -128,6 +215,119 @@ char const* NameOfOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return "float64x2";
     default: return "unknown";
     }
+}
+
+
+bool IsSignedTensorElementDataType(ONNXTensorElementDataType dataType)
+{
+    switch (dataType)
+    {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        return false;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       return false;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      return false;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      return false;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      return false;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:
+    default: return false;
+    }
+}
+
+
+// Collection of 64-bit unsigned integer, signed integer, and float, which is the superset of the data types.
+union ScalarUnion
+{
+    uint64_t u;
+    int64_t i;
+    double f;
+};
+
+
+// Read the data at the given pointer as the type, expanding it to 64 bits.
+ScalarUnion ReadTensorElementOfDataType(void const* data, ONNXTensorElementDataType dataType)
+{
+    switch (dataType)
+    {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        return ScalarUnion{ .u = *reinterpret_cast<bool const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       return ScalarUnion{ .u = *reinterpret_cast<uint8_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        return ScalarUnion{ .i = *reinterpret_cast<int8_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      return ScalarUnion{ .u = *reinterpret_cast<uint16_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       return ScalarUnion{ .i = *reinterpret_cast<int16_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     return ScalarUnion{ .f = *reinterpret_cast<float16m10e5s1_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    return ScalarUnion{ .f = *reinterpret_cast<float16m7e8s1_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       return ScalarUnion{ .i = *reinterpret_cast<int32_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      return ScalarUnion{ .u = *reinterpret_cast<uint32_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       return ScalarUnion{ .f = *reinterpret_cast<float const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      return ScalarUnion{ .u = *reinterpret_cast<uint64_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       return ScalarUnion{ .i = *reinterpret_cast<int64_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      return ScalarUnion{ .f = *reinterpret_cast<double const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return ScalarUnion{ .f = reinterpret_cast<std::pair<float, float> const*>(data)->first };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return ScalarUnion{ .f = reinterpret_cast<std::pair<double, double> const*>(data)->first };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:
+    default: return ScalarUnion{ .u = 0 };
+    }
+}
+
+
+void FormatTypedElement(void const* data, ONNXTensorElementDataType dataType, /*out*/ std::span<char> buffer)
+{
+    if (buffer.empty())
+        return;
+
+    ScalarUnion value = ReadTensorElementOfDataType(data, dataType);
+    std::to_chars_result charsResult;
+    char* dataEnd = buffer.data() + buffer.size();
+
+    switch (dataType)
+    {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:
+        charsResult = std::to_chars(buffer.data(), dataEnd, value.u);
+        break;
+
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:
+        charsResult = std::to_chars(buffer.data(), dataEnd, value.i);
+        break;
+
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:
+        charsResult = std::to_chars(buffer.data(), dataEnd, value.f);
+        break;
+
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:
+    default:
+        strncpy_s(buffer.data(), buffer.size(), "unsupported", buffer.size() - 1);
+        return;
+    }
+
+    // Ensure null terminator.
+    if (charsResult.ptr == dataEnd)
+    {
+        --charsResult.ptr;
+    }
+    *charsResult.ptr = '\0';
 }
 
 
@@ -308,7 +508,7 @@ int wmain(int argc, wchar_t* argv[])
         std::vector<ComPtr<IUnknown>> executionProviderTensorWrappers; // Preserve lifetime of input tensors in the Ort::Value, which doesn't seem to hold a reference.
 
         size_t const inputCount = session.GetInputCount();
-        size_t const outputCount = session.GetInputCount();
+        size_t const outputCount = session.GetOutputCount();
 
         // Loop though inputs and outputs.
         for (int bindingPass = 0; bindingPass < 2; ++bindingPass)
@@ -343,7 +543,8 @@ int wmain(int argc, wchar_t* argv[])
 
                 // TODO: Fill with random values or an increasing sequence depending on data type.
 
-                printf("Binding tensor '%s', %s[%zu].\n", tensorName.c_str(), NameOfOnnxTensorElementDataType(tensorDataType), tensorElementCount);
+                char const* inputOrOutputString = isInputStep ? "input" : "output";
+                printf("Binding %s tensor '%s', %s[%zu].\n", inputOrOutputString, tensorName.c_str(), NameOfOnnxTensorElementDataType(tensorDataType), tensorElementCount);
 
                 if (PASS_TENSORS_AS_D3D_RESOURCES)
                 {
@@ -462,10 +663,18 @@ int wmain(int argc, wchar_t* argv[])
         ////////////////////////////////////////
         // Print output values
 
-        if (!outputTensors.empty() && !outputTensorValues.empty() && outputTensors.front().IsTensor())
+        for (size_t i = 0; i < outputCount; ++i)
         {
-            Ort::TensorTypeAndShapeInfo typeAndShapeInfo = outputTensors.front().GetTensorTypeAndShapeInfo();
-            PrintValues(outputTensorValues.front(), typeAndShapeInfo.GetElementType());
+            printf("Output #%zu:\n", i);
+            if (i < outputTensors.size() && i < outputTensorValues.size() && outputTensors[i].IsTensor())
+            {
+                Ort::TensorTypeAndShapeInfo typeAndShapeInfo = outputTensors[i].GetTensorTypeAndShapeInfo();
+                PrintValues(outputTensorValues[i], typeAndShapeInfo.GetElementType());
+            }
+            else
+            {
+                printf("    Not a tensor.\n");
+            }
         }
     }
     catch (Ort::Exception const& exception)
@@ -491,25 +700,51 @@ void PrintValues(std::span<const std::byte> data, ONNXTensorElementDataType data
         return;
     }
 
-    // TODO: Support other data types.
+    size_t const bytesPerElement = ByteSizeOfOnnxTensorElementDataType(dataType);
+    size_t const elementCount = data.size_bytes() / bytesPerElement;
 
-    std::span<const float> typedData = { reinterpret_cast<float const*>(data.data()), data.size() / sizeof(float) };
+    char numberBuffer[20];
 
     // Print the first 10 and top 10 results.
-    printf("First 10 results:\n");
-    for (int i = 0; i <= std::min(typedData.size(), size_t(10)); ++i)
+    printf("  First 10 results:\n");
+    for (size_t i = 0, ci = std::min(elementCount, size_t(10)); i < ci; ++i)
     {
-        printf("    output[%d] = %f\n", i, typedData[i]);
+        FormatTypedElement(&data[i * bytesPerElement], dataType, /*out*/ numberBuffer);
+        printf("    output[%zu] = %s\n", i, numberBuffer);
     }
-
-    printf("Top 10 results:\n");
-    size_t maxSortSize = std::min(size_t(10'000), typedData.size());
-    std::vector<uint32_t> indices(maxSortSize, 0);
-    std::iota(indices.begin(), indices.end(), 0);
-    sort(indices.begin(), indices.end(), [&](uint32_t a, uint32_t b) { return (typedData[a] > typedData[b]); });
-    for (size_t i = 0, ci = std::min(indices.size(), size_t(10)); i <= ci; ++i)
+    
+    size_t maxSortSize = 10'000;
+    if (elementCount <= maxSortSize)
     {
-        printf("    output[%d] = %f\n", indices[i], typedData[indices[i]]);
+        printf("  Top 10 results:\n");
+
+        std::vector<uint32_t> indices(elementCount, 0);
+        std::iota(indices.begin(), indices.end(), 0);
+
+        std::byte const* dataPointer = data.data();
+        // Determine whether the data type is signed ahead of time so that unsigned comparisons
+        // correctly place positive numbers before negative ones. All comparisons regardless of
+        // data type are done bitwise (which is safe even for floating point numbers).
+        uint64_t const signInversion = IsSignedTensorElementDataType(dataType) ? (uint64_t(1) << 63) : 0;
+
+        sort(
+            indices.begin(),
+            indices.end(),
+            [&, dataPointer, bytesPerElement, dataType](uint32_t a, uint32_t b)
+            {
+                ScalarUnion valueA = ReadTensorElementOfDataType(&dataPointer[a * bytesPerElement], dataType);
+                ScalarUnion valueB = ReadTensorElementOfDataType(&dataPointer[b * bytesPerElement], dataType);
+                valueA.u ^= signInversion;
+                valueB.u ^= signInversion;
+                return valueA.u > valueB.u;
+            }
+        );
+
+        for (size_t i = 0, ci = std::min(indices.size(), size_t(10)); i < ci; ++i)
+        {
+            FormatTypedElement(&data[indices[i] * bytesPerElement], dataType, /*out*/ numberBuffer);
+            printf("    output[%u] = %s\n", indices[i], numberBuffer);
+        }
     }
 }
 

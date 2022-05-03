@@ -694,12 +694,6 @@ int wmain(int argc, wchar_t* argv[])
 
 void PrintValues(std::span<const std::byte> data, ONNXTensorElementDataType dataType)
 {
-    if (dataType != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT)
-    {
-        printf("Can only print float32 data output, not %s\n", NameOfOnnxTensorElementDataType(dataType));
-        return;
-    }
-
     size_t const bytesPerElement = ByteSizeOfOnnxTensorElementDataType(dataType);
     size_t const elementCount = data.size_bytes() / bytesPerElement;
 

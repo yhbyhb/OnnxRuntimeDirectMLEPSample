@@ -67,27 +67,34 @@ struct float16m10e5s1_t
     static int32_t  constexpr float32to16mantissaCountDifference = float32mantissaCount - float16mantissaCount;
     static uint32_t constexpr float16exponentCount = 5;
     static uint32_t constexpr float32exponentCount = 8;
-    static uint32_t constexpr float32to16exponentAdjustment = 15 - 127;
+    static int32_t  constexpr float16exponentBias = 15;
+    static int32_t  constexpr float16exponentMin = 0; // effectively 2^(0-15)
+    static int32_t  constexpr float16exponentMax = 31; // effectively 2^(31-15) or 2^16
+    static int32_t  constexpr float32exponentBias = 127;
+    static int32_t  constexpr float32exponentMin = 0; // effectively 2^(0-127)
+    static int32_t  constexpr float32exponentMax = 255; // effectively 2^(255-127) or 2^128
+    static int32_t  constexpr float32vs16exponentAdjustment = float32exponentBias - float16exponentBias;
     static uint32_t constexpr float16signMask = 0b1'00000'0000000000;
     static uint32_t constexpr float32signMask = 0b10000000'00000000'00000000'00000000;
-    static uint32_t constexpr float16exponentMask = 0b0'11111'0000000000;
     static uint32_t constexpr float16mantissaMask = 0b0'00000'1111111111;
-    static uint32_t constexpr float32exponentMask = 0b01111111'10000000'00000000'00000000;
+    static uint32_t constexpr float16exponentMask = 0b0'11111'0000000000;
     static uint32_t constexpr float32mantissaMask = 0b00000000'01111111'11111111'11111111;
-    static uint32_t constexpr float32overflow16exponentmask = 0b01110000'00000000'00000000'00000000; // The exponent bits that would overflow float16.
-    static uint32_t constexpr float32saturated16exponentmask = 0b00001111'11111111'11111111'11111111; // The saturated float16 exponent and mantissa in float32.
+    static uint32_t constexpr float32exponentMask = 0b01111111'10000000'00000000'00000000;
+    static uint32_t constexpr float32minimum16bitExponent = (float16exponentMin + float32vs16exponentAdjustment) << float32mantissaCount;
+    static uint32_t constexpr float32maximum16bitExponent = (float16exponentMax + float32vs16exponentAdjustment) << float32mantissaCount;
 
     float16m10e5s1_t(float floatValue) noexcept
     {
         // Shift the mantissa, exponent, and sign from the 32-bit locations to 16-bit.
         // Sature the exponent if greater than float16 can represent.
-        // TODO: Handle infinity and denorms.
+        // float32 denorms are flushed to zero.
         uint32_t const float32bitValue = reinterpret_cast<uint32_t&>(floatValue);
         uint32_t const sign = (float32bitValue >> 16) & float16signMask;
-        uint32_t const mantissaAndExponent = ((float32bitValue >> float32to16mantissaCountDifference) + (float32to16exponentAdjustment << float16mantissaCount)); // & (float16mantissaMask | float16exponentMask);
-        uint32_t const float16denormMask = (float32bitValue & float32exponentMask) ? (float16mantissaMask | float16exponentMask) : 0;
-        uint32_t const float16saturationMask = (float32bitValue & float32overflow16exponentmask) ? float16exponentMask : 0;
-        uint32_t const float16bitValue = (mantissaAndExponent & float16denormMask) | float16saturationMask | sign;
+        int32_t  const float32mantissaAndExponent = float32bitValue & (float32mantissaMask | float32exponentMask); // Keep everything except sign.
+        int32_t  const float16mantissaAndExponent = (float32mantissaAndExponent >> float32to16mantissaCountDifference) - (float32vs16exponentAdjustment << float16mantissaCount); // Adjust the bits and exponent range.
+        uint32_t const float16denormMask = (float16mantissaAndExponent > int32_t(float16mantissaMask)) ? (float16mantissaMask | float16exponentMask) : 0;
+        uint32_t const float16saturationMask = (float16mantissaAndExponent >= int32_t(float16mantissaMask | float16exponentMask)) ? float16exponentMask : 0;
+        uint32_t const float16bitValue = (float16mantissaAndExponent & float16denormMask) | float16saturationMask | sign;
         value = uint16_t(float16bitValue);
     }
 
@@ -101,19 +108,22 @@ struct float16m10e5s1_t
 
     operator float() const noexcept
     {
-        // TODO: Handle infinity and denorms.
+        // float32 denorms are flushed to zero.
         uint32_t const float16bitValue = value;
         uint32_t const sign = (float16bitValue << 16) & float32signMask;
-        uint32_t const mantissaAndExponent = ((float16bitValue << float32to16mantissaCountDifference) - (float32to16exponentAdjustment << float32mantissaCount)) & (float32mantissaMask | float32exponentMask);
-        uint32_t const float32denormMask = (float16bitValue & float16exponentMask) ? (float32mantissaMask | float32exponentMask) : 0;
-        uint32_t const float32saturationMask = ((float16bitValue & float16exponentMask) == float16exponentMask) ? float32exponentMask : 0;
-        uint32_t const float32bitValue = (mantissaAndExponent & float32denormMask) | float32saturationMask | sign;
+        int32_t  const float16mantissaAndExponent = float16bitValue & (float16mantissaMask | float16exponentMask); // Keep everything except sign.
+        int32_t  const float32mantissaAndExponent = (float16mantissaAndExponent << float32to16mantissaCountDifference) + (float32vs16exponentAdjustment << float32mantissaCount);
+        uint32_t const float32denormMask = (float32mantissaAndExponent > int32_t(float32minimum16bitExponent|float32mantissaMask)) ? (float32mantissaMask | float32exponentMask) : 0;
+        uint32_t const float32saturationMask = (float32mantissaAndExponent >= int32_t(float32maximum16bitExponent)) ? float32exponentMask : 0;
+        uint32_t const float32bitValue = (float32mantissaAndExponent & float32denormMask) | float32saturationMask | sign;
         float floatValue = 0.0;
         reinterpret_cast<uint32_t&>(floatValue) = float32bitValue;
         return floatValue;
     }
 
     uint16_t value;
+
+    // constexpr float testNumbers[] = {0.0f, 1.0f, -1.0f, 0.5f, -0.5f, 65504.0f, -65504.0f, 16777216.0f, -16777216.0f, std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::quiet_NaN(), -std::numeric_limits<float>::infinity()};
 };
 
 
@@ -545,6 +555,7 @@ int wmain(int argc, wchar_t* argv[])
                 ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions2, 0);
             }
             Ort::Session session2 = Ort::Session(ortEnvironment, modelFilePath, sessionOptions);
+            printf("Optimized version of '%S' exported to 'optimized.ort'.\n", modelFilePath);
             modelFilePath = L"optimized.ort";
         }
 
@@ -573,8 +584,8 @@ int wmain(int argc, wchar_t* argv[])
         std::vector<Ort::Value> outputTensors;
         std::vector<std::vector<std::byte>> inputTensorValues; // Preserve the values since the CPU tensor just lightly wraps them.
         std::vector<std::vector<std::byte>> outputTensorValues;
-        std::vector<ComPtr<IUnknown>> inputTensorWrappers; // Preserve lifetime of input tensors in the Ort::Value, which doesn't seem to hold a reference.
-        std::vector<ComPtr<IUnknown>> outputTensorWrappers; // Preserve lifetime of input tensors in the Ort::Value, which doesn't seem to hold a reference.
+        std::vector<ComPtr<IUnknown>> inputTensorWrappers; // Preserve lifetime of tensors in the Ort::Value, which doesn't seem to hold a reference.
+        std::vector<ComPtr<IUnknown>> outputTensorWrappers;
 
         size_t const inputCount = session.GetInputCount();
         size_t const outputCount = session.GetOutputCount();

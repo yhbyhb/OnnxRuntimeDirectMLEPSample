@@ -173,17 +173,6 @@ T GetElementCount(C const& range)
 };
 
 
-// Used to work-around std::vector bool specialization.
-template <typename T>
-class WrapperClass
-{
-public:
-    WrapperClass() {}
-    WrapperClass(T const& value) : value_(value) {}
-    T value_;
-};
-
-
 template <typename T>
 struct ComPtr : public Microsoft::WRL::ComPtr<T>
 {
@@ -411,20 +400,10 @@ void FormatTypedElement(void const* data, ONNXTensorElementDataType dataType, /*
 }
 
 
-std::string GetInputName(size_t index, Ort::Session const& session)
+std::string GetTensorName(size_t index, Ort::Session const& session, bool isInput)
 {
     Ort::AllocatorWithDefaultOptions allocator;
-    char* name = session.GetInputName(index, allocator);
-    std::string returnName(name);
-    allocator.Free(name); // Don't leak memory.
-    return returnName;
-}
-
-
-std::string GetOutputName(size_t index, Ort::Session const& session)
-{
-    Ort::AllocatorWithDefaultOptions allocator;
-    char* name = session.GetOutputName(index, allocator);
+    char* name = isInput ? session.GetInputName(index, allocator) : session.GetOutputName(index, allocator);
     std::string returnName(name);
     allocator.Free(name); // Don't leak memory.
     return returnName;
@@ -445,7 +424,6 @@ Ort::Value CreateTensorValueUsingD3DResource(
     /*out*/ void** dmlEpResourceWrapper
 );
 
-
 void UploadTensorData(
     ID3D12CommandQueue* commandQueue,
     ID3D12CommandAllocator* commandAllocator,
@@ -453,7 +431,6 @@ void UploadTensorData(
     ID3D12Resource* destinationResource,
     std::span<const std::byte> sourceData
 );
-
 
 void DownloadTensorData(
     ID3D12CommandQueue* commandQueue,
@@ -463,6 +440,22 @@ void DownloadTensorData(
     std::span<std::byte> destinationData
 );
 
+bool BindValues(
+    size_t tensorIndex,
+    bool isInputStep,
+    Ort::Session& session,
+    OrtDmlApi const& ortDmlApi,
+    Ort::IoBinding& ioBinding,
+    Ort::MemoryInfo& memoryInformation,
+    Ort::Allocator& deviceAllocator,
+    ID3D12Device* d3d12Device,
+    ID3D12CommandQueue* commandQueue,
+    ID3D12CommandAllocator* commandAllocator,
+    ID3D12GraphicsCommandList* commandList,
+    std::vector<Ort::Value>& tensors,
+    std::vector<std::vector<std::byte>>& tensorsValues,
+    std::vector<ComPtr<IUnknown>>& tensorWrappers
+);
 
 void PrintFirstNValues(std::span<const std::byte> data, size_t n, ONNXTensorElementDataType dataType);
 void PrintTopNValues(std::span<const std::byte> data, size_t n, ONNXTensorElementDataType dataType);
@@ -602,92 +595,22 @@ int wmain(int argc, wchar_t* argv[])
 
             for (size_t tensorIndex = 0; tensorIndex < tensorCount; ++tensorIndex)
             {
-                std::string tensorName = isInputStep ? GetInputName(tensorIndex, session) : GetOutputName(tensorIndex, session);
-                Ort::TypeInfo typeInfo = isInputStep ? session.GetInputTypeInfo(tensorIndex) : session.GetOutputTypeInfo(tensorIndex);
-                if (typeInfo.GetONNXType() != ONNXType::ONNX_TYPE_TENSOR)
-                {
-                    printf("Unknown binding type for '%s'\n", tensorName.c_str());
-                    continue; // Can't handle this type. So skip it.
-                }
-
-                // Get the tensor shape and type.
-                // Note when computing the element count that it's unsafe to call ORT's shapeInfo.GetElementCount()
-                // because you may get a SafeInt overflow if there are free dimensions, which are treated as -1's.
-                // So replace those with 1's first.
-                Ort::Unowned<Ort::TensorTypeAndShapeInfo> shapeInfo = typeInfo.GetTensorTypeAndShapeInfo();
-                ONNXTensorElementDataType const tensorDataType = shapeInfo.GetElementType();
-                if (!IsSupportedOnnxTensorElementDataType(tensorDataType))
-                {
-                    printf("Unsupported tensor data type %d '%s' for '%s'\n", int32_t(tensorDataType), NameOfOnnxTensorElementDataType(tensorDataType), tensorName.c_str());
-                    continue; // Can't handle this type. So skip it.
-                }
-
-                std::vector<int64_t> tensorShape = shapeInfo.GetShape();
-                std::for_each(tensorShape.begin(), tensorShape.end(), [](int64_t& i) {i = std::max(i, int64_t(1)); });
-                size_t const tensorElementCount = GetElementCount(tensorShape);
-
-                // Allocate values for tensor.
-                Ort::Value tensor(nullptr);
-                ComPtr<IUnknown> executionProviderTensorWrapper;
-                std::vector<std::byte> tensorValues(tensorElementCount * ByteSizeOfOnnxTensorElementDataType(tensorDataType));
-
-                // Fill tensor with an increasing sequence.
-                if (isInputStep)
-                {
-                    GenerateValueSequence(/*out*/ tensorValues, tensorDataType);
-                }
-
-                char const* inputOrOutputString = isInputStep ? "input" : "output";
-                printf("Binding %s tensor '%s', %s[%zu].\n", inputOrOutputString, tensorName.c_str(), NameOfOnnxTensorElementDataType(tensorDataType), tensorElementCount);
-
-                if (PASS_TENSORS_AS_D3D_RESOURCES)
-                {
-                    // Create D3D resource for input/output.
-                    ComPtr<ID3D12Resource> d3dResource;
-                    tensor = CreateTensorValueUsingD3DResource(
-                        d3d12Device,
-                        *ortDmlApi,
-                        memoryInformation,
-                        tensorShape,
-                        tensorDataType,
-                        ByteSizeOfOnnxTensorElementDataType(tensorDataType),
-                        /*out*/ &d3dResource,
-                        /*out*/ IID_PPV_ARGS_Helper(executionProviderTensorWrapper.GetAddressOf())
-                    );
-
-                    if (isInputStep)
-                    {
-                        // Upload it to the GPU, and wait for completion. Note a more efficient approach would enqueue and upload
-                        // them all at once rather than waiting for each one to finish.
-                        UploadTensorData(commandQueue, commandAllocator, commandList, d3dResource, tensorValues);
-                    }
-                }
-                else // CPU tensor
-                {
-                    tensor = Ort::Value::CreateTensor(
-                        memoryInformation,
-                        reinterpret_cast<void*>(tensorValues.data()),
-                        tensorValues.size(),
-                        tensorShape.data(),
-                        tensorShape.size(),
-                        tensorDataType
-                    );
-                }
-
-                if (isInputStep)
-                {
-                    ioBinding.BindInput(tensorName.c_str(), tensor);
-                    inputTensors.push_back(std::move(tensor));
-                    inputTensorValues.push_back(std::move(tensorValues));
-                    inputTensorWrappers.push_back(std::move(executionProviderTensorWrapper));
-                }
-                else // Output
-                {
-                    ioBinding.BindOutput(tensorName.c_str(), tensor);
-                    outputTensors.push_back(std::move(tensor));
-                    outputTensorValues.push_back(std::move(tensorValues));
-                    outputTensorWrappers.push_back(std::move(executionProviderTensorWrapper));
-                }
+                BindValues(
+                    tensorIndex,
+                    isInputStep,
+                    session,
+                    *ortDmlApi,
+                    ioBinding,
+                    memoryInformation,
+                    deviceAllocator,
+                    d3d12Device,
+                    commandQueue,
+                    commandAllocator,
+                    commandList,
+                    isInputStep ? inputTensors : outputTensors,
+                    isInputStep ? inputTensorValues : outputTensorValues,
+                    isInputStep ? inputTensorWrappers : outputTensorWrappers
+                );
             }
         }
 
@@ -768,7 +691,7 @@ int wmain(int argc, wchar_t* argv[])
         ////////////////////////////////////////
         // Print output values
 
-        size_t const inputTensorCount = outputTensors.size();
+        size_t const inputTensorCount = inputTensors.size();
         for (size_t i = 0; i < inputTensorCount; ++i)
         {
             assert(inputTensors[i].IsTensor());
@@ -797,6 +720,112 @@ int wmain(int argc, wchar_t* argv[])
     }
 
     return EXIT_SUCCESS;
+}
+
+
+bool BindValues(
+    size_t tensorIndex,
+    bool isInputStep,
+    Ort::Session& session,
+    OrtDmlApi const& ortDmlApi,
+    Ort::IoBinding& ioBinding,
+    Ort::MemoryInfo& memoryInformation,
+    Ort::Allocator& deviceAllocator,
+    ID3D12Device* d3d12Device,
+    ID3D12CommandQueue* commandQueue,
+    ID3D12CommandAllocator* commandAllocator,
+    ID3D12GraphicsCommandList* commandList,
+    std::vector<Ort::Value>& tensors,
+    std::vector<std::vector<std::byte>>& tensorsValues,
+    std::vector<ComPtr<IUnknown>>& tensorWrappers
+    )
+{
+    std::string tensorName = GetTensorName(tensorIndex, session, isInputStep);
+    Ort::TypeInfo typeInfo = isInputStep ? session.GetInputTypeInfo(tensorIndex) : session.GetOutputTypeInfo(tensorIndex);
+    if (typeInfo.GetONNXType() != ONNXType::ONNX_TYPE_TENSOR)
+    {
+        printf("Unknown binding type for '%s'\n", tensorName.c_str());
+        return false; // Can't handle this type. So skip it.
+    }
+
+    // Get the tensor shape and type.
+    // Note when computing the element count that it's unsafe to call ORT's shapeInfo.GetElementCount()
+    // because you may get a SafeInt overflow if there are free dimensions, which are treated as -1's.
+    // So replace those with 1's first.
+    Ort::Unowned<Ort::TensorTypeAndShapeInfo> shapeInfo = typeInfo.GetTensorTypeAndShapeInfo();
+    ONNXTensorElementDataType const tensorDataType = shapeInfo.GetElementType();
+    if (!IsSupportedOnnxTensorElementDataType(tensorDataType))
+    {
+        printf("Unsupported tensor data type %d '%s' for '%s'\n", int32_t(tensorDataType), NameOfOnnxTensorElementDataType(tensorDataType), tensorName.c_str());
+        return false; // Can't handle this type. So skip it.
+    }
+
+    std::vector<int64_t> tensorShape = shapeInfo.GetShape();
+    std::for_each(tensorShape.begin(), tensorShape.end(), [](int64_t& i) {i = std::max(i, int64_t(1)); });
+    size_t const tensorElementCount = GetElementCount(tensorShape);
+
+    // Allocate values for tensor.
+    Ort::Value tensor(nullptr);
+    ComPtr<IUnknown> executionProviderTensorWrapper;
+    std::vector<std::byte> tensorValues(tensorElementCount * ByteSizeOfOnnxTensorElementDataType(tensorDataType));
+
+    // Fill input tensor with an increasing sequence.
+    if (isInputStep)
+    {
+        GenerateValueSequence(/*out*/ tensorValues, tensorDataType);
+    }
+
+    char const* inputOrOutputString = isInputStep ? "input" : "output";
+    printf("Binding %s tensor '%s', %s[%zu].\n", inputOrOutputString, tensorName.c_str(), NameOfOnnxTensorElementDataType(tensorDataType), tensorElementCount);
+
+    if (PASS_TENSORS_AS_D3D_RESOURCES)
+    {
+        // Create D3D resource for input/output.
+        ComPtr<ID3D12Resource> d3dResource;
+        tensor = CreateTensorValueUsingD3DResource(
+            d3d12Device,
+            ortDmlApi,
+            memoryInformation,
+            tensorShape,
+            tensorDataType,
+            ByteSizeOfOnnxTensorElementDataType(tensorDataType),
+            /*out*/ &d3dResource,
+            /*out*/ IID_PPV_ARGS_Helper(executionProviderTensorWrapper.GetAddressOf())
+        );
+
+        if (isInputStep)
+        {
+            // Upload it to the GPU, and wait for completion. Note a more efficient approach would enqueue and upload
+            // them all at once rather than waiting for each one to finish.
+            UploadTensorData(commandQueue, commandAllocator, commandList, d3dResource, tensorValues);
+        }
+    }
+    else // CPU tensor
+    {
+        tensor = Ort::Value::CreateTensor(
+            memoryInformation,
+            reinterpret_cast<void*>(tensorValues.data()),
+            tensorValues.size(),
+            tensorShape.data(),
+            tensorShape.size(),
+            tensorDataType
+        );
+    }
+
+    if (isInputStep)
+    {
+        ioBinding.BindInput(tensorName.c_str(), tensor);
+    }
+    else // Output
+    {
+        ioBinding.BindOutput(tensorName.c_str(), tensor);
+    }
+
+    tensors.push_back(std::move(tensor));
+    tensorsValues.push_back(std::move(tensorValues));
+    tensorWrappers.push_back(std::move(executionProviderTensorWrapper));
+
+    return true;
 }
 
 

@@ -333,7 +333,7 @@ void DownloadTensorData(
 
 bool BindValues(
     size_t tensorIndex,
-    bool isInputStep,
+    bool isInputTensor,
     Ort::Session& session,
     OrtDmlApi const& ortDmlApi,
     Ort::IoBinding& ioBinding,
@@ -430,7 +430,7 @@ int wmain(int argc, wchar_t* argv[])
         Ort::SessionOptions sessionOptions;
         sessionOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
         sessionOptions.DisableMemPattern();
-        sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL); // Note ORT_ENABLE_BASIC is useful for debugging.
+        sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED); // Note ORT_ENABLE_BASIC is useful for debugging.
         ortApi.AddFreeDimensionOverrideByName(sessionOptions, "batch_size", 1);
 
         // Test export and reload of optimized model.
@@ -442,7 +442,7 @@ int wmain(int argc, wchar_t* argv[])
             {
                 ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions2, 0);
             }
-            Ort::Session session2 = Ort::Session(ortEnvironment, modelFilePath, sessionOptions);
+            Ort::Session session2 = Ort::Session(ortEnvironment, modelFilePath, sessionOptions2);
             printf("Optimized version of '%S' exported to 'optimized.ort'.\n", modelFilePath);
             modelFilePath = L"optimized.ort";
         }
@@ -481,14 +481,14 @@ int wmain(int argc, wchar_t* argv[])
         // Loop though inputs and outputs.
         for (int bindingPass = 0; bindingPass < 2; ++bindingPass)
         {
-            bool const isInputStep = (bindingPass == 0);
-            size_t const tensorCount = isInputStep ? inputCount : outputCount;
+            bool const isInputTensor = (bindingPass == 0);
+            size_t const tensorCount = isInputTensor ? inputCount : outputCount;
 
             for (size_t tensorIndex = 0; tensorIndex < tensorCount; ++tensorIndex)
             {
                 BindValues(
                     tensorIndex,
-                    isInputStep,
+                    isInputTensor,
                     session,
                     *ortDmlApi,
                     ioBinding,
@@ -498,9 +498,9 @@ int wmain(int argc, wchar_t* argv[])
                     commandQueue,
                     commandAllocator,
                     commandList,
-                    isInputStep ? inputTensors : outputTensors,
-                    isInputStep ? inputTensorValues : outputTensorValues,
-                    isInputStep ? inputTensorWrappers : outputTensorWrappers
+                    isInputTensor ? inputTensors : outputTensors,
+                    isInputTensor ? inputTensorValues : outputTensorValues,
+                    isInputTensor ? inputTensorWrappers : outputTensorWrappers
                 );
             }
         }
@@ -616,7 +616,7 @@ int wmain(int argc, wchar_t* argv[])
 
 bool BindValues(
     size_t tensorIndex,
-    bool isInputStep,
+    bool isInputTensor,
     Ort::Session& session,
     OrtDmlApi const& ortDmlApi,
     Ort::IoBinding& ioBinding,
@@ -631,8 +631,8 @@ bool BindValues(
     std::vector<ComPtr<IUnknown>>& tensorWrappers
     )
 {
-    std::string tensorName = GetTensorName(tensorIndex, session, isInputStep);
-    Ort::TypeInfo typeInfo = isInputStep ? session.GetInputTypeInfo(tensorIndex) : session.GetOutputTypeInfo(tensorIndex);
+    std::string tensorName = GetTensorName(tensorIndex, session, isInputTensor);
+    Ort::TypeInfo typeInfo = isInputTensor ? session.GetInputTypeInfo(tensorIndex) : session.GetOutputTypeInfo(tensorIndex);
     if (typeInfo.GetONNXType() != ONNXType::ONNX_TYPE_TENSOR)
     {
         printf("Unknown binding type for '%s'\n", tensorName.c_str());
@@ -661,12 +661,12 @@ bool BindValues(
     std::vector<std::byte> tensorValues(tensorElementCount * ByteSizeOfOnnxTensorElementDataType(tensorDataType));
 
     // Fill input tensor with an increasing sequence.
-    if (isInputStep)
+    if (isInputTensor)
     {
         GenerateValueSequence(/*out*/ tensorValues, tensorDataType);
     }
 
-    char const* inputOrOutputString = isInputStep ? "input" : "output";
+    char const* inputOrOutputString = isInputTensor ? "input" : "output";
     printf("Binding %s tensor '%s', %s[%zu].\n", inputOrOutputString, tensorName.c_str(), NameOfOnnxTensorElementDataType(tensorDataType), tensorElementCount);
 
     if (PASS_TENSORS_AS_D3D_RESOURCES)
@@ -684,7 +684,7 @@ bool BindValues(
             /*out*/ IID_PPV_ARGS_Helper(executionProviderTensorWrapper.GetAddressOf())
         );
 
-        if (isInputStep)
+        if (isInputTensor)
         {
             // Upload it to the GPU, and wait for completion. Note a more efficient approach would enqueue and upload
             // them all at once rather than waiting for each one to finish.
@@ -703,7 +703,7 @@ bool BindValues(
         );
     }
 
-    if (isInputStep)
+    if (isInputTensor)
     {
         ioBinding.BindInput(tensorName.c_str(), tensor);
     }

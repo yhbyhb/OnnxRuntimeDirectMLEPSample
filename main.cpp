@@ -212,7 +212,7 @@ ScalarUnion ReadTensorElementOfDataType(void const* data, ONNXTensorElementDataT
 }
 
 
-// Read the data at the given pointer as the type, expanding it to 64 bits.
+// Write a value to the given pointer as the type.
 template <typename T>
 void WriteTensorElementOfDataType(void* data, ONNXTensorElementDataType dataType, T newValue)
 {

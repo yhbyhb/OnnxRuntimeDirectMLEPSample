@@ -76,7 +76,7 @@ size_t IsSupportedOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
 {
     switch (dataType)
     {
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:   return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:   return false;
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        return true;
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       return true;
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        return true;

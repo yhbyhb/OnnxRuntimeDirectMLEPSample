@@ -301,6 +301,20 @@ std::string GetTensorName(size_t index, Ort::Session const& session, bool isInpu
 }
 
 
+std::string GetModuleFileName(char const* moduleName)
+{
+    HMODULE module = GetModuleHandleA(moduleName);
+    if (module == nullptr)
+    {
+        return "";
+    }
+
+    std::string fileName(MAX_PATH + 1, '\0');
+    GetModuleFileNameA(module, /*out*/ fileName.data(), MAX_PATH);
+    return fileName;
+}
+
+
 ////////////////////////////////////////////////////////////////////////////////
 // Forward declarations
 
@@ -453,6 +467,9 @@ int wmain(int argc, wchar_t* argv[])
             ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions, 0); // TODO: Change this to an explicit device id, not just 0 using adapter above.
         }
 
+        printf("DLL path ONNX Runtime: %s\n", GetModuleFileName("onnxruntime.dll").c_str());
+        printf("DLL path DirectML: %s\n", GetModuleFileName("directml.dll").c_str());
+
         ////////////////////////////////////////
         // Load the model
 
@@ -518,10 +535,17 @@ int wmain(int argc, wchar_t* argv[])
 
         printf("Beginning execution.\n");
         QueryPerformanceCounter(&runStartTime);
-        session.Run(runOptions, ioBinding);
-        QueryPerformanceCounter(&runTime);
-        ioBinding.SynchronizeOutputs();
-        QueryPerformanceCounter(&synchronizeOutputsTime);
+        for (uint32_t i = 0, executionCount = 3; i < executionCount; ++i)
+        {
+            if (executionCount > 1)
+            {
+                printf("Iteration %d/%d.\n", i + 1, executionCount);
+            }
+            session.Run(runOptions, ioBinding);
+            QueryPerformanceCounter(&runTime);
+            ioBinding.SynchronizeOutputs();
+            QueryPerformanceCounter(&synchronizeOutputsTime);
+        }
         runEndTime = synchronizeOutputsTime;
         printf("Finished execution.\n");
 

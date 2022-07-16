@@ -677,7 +677,7 @@ bool BindValues(
 
     std::vector<int64_t> tensorShape = shapeInfo.GetShape();
     std::for_each(tensorShape.begin(), tensorShape.end(), [](int64_t& i) {i = std::max(i, int64_t(1)); });
-    size_t const tensorElementCount = GetElementCount(tensorShape);
+    size_t const tensorElementCount = static_cast<size_t>(GetElementCount(tensorShape));
 
     // Allocate values for tensor.
     Ort::Value tensor(nullptr);

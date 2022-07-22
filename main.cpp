@@ -535,17 +535,10 @@ int wmain(int argc, wchar_t* argv[])
 
         printf("Beginning execution.\n");
         QueryPerformanceCounter(&runStartTime);
-        for (uint32_t i = 0, executionCount = 3; i < executionCount; ++i)
-        {
-            if (executionCount > 1)
-            {
-                printf("Iteration %d/%d.\n", i + 1, executionCount);
-            }
-            session.Run(runOptions, ioBinding);
-            QueryPerformanceCounter(&runTime);
-            ioBinding.SynchronizeOutputs();
-            QueryPerformanceCounter(&synchronizeOutputsTime);
-        }
+        session.Run(runOptions, ioBinding);
+        QueryPerformanceCounter(&runTime);
+        ioBinding.SynchronizeOutputs();
+        QueryPerformanceCounter(&synchronizeOutputsTime);
         runEndTime = synchronizeOutputsTime;
         printf("Finished execution.\n");
 

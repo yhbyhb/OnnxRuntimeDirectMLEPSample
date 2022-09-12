@@ -19,6 +19,7 @@
 #include <d3d12.h>
 #include <wrl/client.h> // Use the good old helper functions, not the huge WinRT entanglement.
 
+#include "cpu_provider_factory.h"
 #include "dml_provider_factory.h"
 #include "onnxruntime_cxx_api.h"
 
@@ -444,7 +445,9 @@ int wmain(int argc, wchar_t* argv[])
         Ort::SessionOptions sessionOptions;
         sessionOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
         sessionOptions.DisableMemPattern();
-        sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED); // Note ORT_ENABLE_BASIC is useful for debugging.
+        sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_DISABLE_ALL); // Note ORT_ENABLE_BASIC is useful for debugging.
+        OrtSessionOptionsAppendExecutionProvider_CPU(sessionOptions, /*use_arena*/ true);
+
         ortApi.AddFreeDimensionOverrideByName(sessionOptions, "batch_size", 1);
 
         // Test export and reload of optimized model.

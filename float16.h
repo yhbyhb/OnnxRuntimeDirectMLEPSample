@@ -1,12 +1,26 @@
+#include <stdint.h>
+
+#if __has_include(<stdfloat>)
+#include <stdfloat>
+#endif
+
+#ifndef __STDCPP_FLOAT64_T__
+using float64_t = double;
+#endif
+
+#ifndef __STDCPP_FLOAT32_T__
+using float32_t = float;
+#endif
+
+#ifdef __STDCPP_FLOAT16_T__
+
+using float16m10e5s1_t = float16_t;
+
+#else // No __STDCPP_FLOAT16_T__
+
 // Minimal implementation of float16, for both IEEE's m10e5s1 and Google Brain's m7e8s1.
 // See http://half.sourceforge.net/ if you want something mature, as these helpers
 // don't support math (addition, multiplication...), just conversion to and from float32.
-
-#include <stdint.h>
-
-using float32_t = float;
-using float64_t = double;
-
 
 // Standard IEEE 16-bit floating type.
 // This class contains just enough logic for conversion, not general math.
@@ -83,6 +97,8 @@ struct float16m10e5s1_t
 
     // constexpr float testNumbers[] = {0.0f, 1.0f, -1.0f, 0.5f, -0.5f, 65504.0f, -65504.0f, 16777216.0f, -16777216.0f, std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::quiet_NaN(), -std::numeric_limits<float>::infinity()};
 };
+
+#endif // __STDCPP_FLOAT16_T__
 
 
 // Truncated IEEE 32-bit floating type to 16-bits (so called "brain float").

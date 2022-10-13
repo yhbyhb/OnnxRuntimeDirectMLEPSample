@@ -30,4 +30,9 @@
   <ItemGroup>
     <Text Include="License.txt" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="FloatSupport.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
 </Project>

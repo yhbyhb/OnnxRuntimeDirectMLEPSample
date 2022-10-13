@@ -23,7 +23,7 @@
 #include "dml_provider_factory.h"
 #include "onnxruntime_cxx_api.h"
 
-#include "float16.h"
+#include "FloatSupport.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // Configuration

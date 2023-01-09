@@ -445,7 +445,7 @@ int wmain(int argc, wchar_t* argv[])
         Ort::SessionOptions sessionOptions;
         sessionOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
         sessionOptions.DisableMemPattern();
-        sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_DISABLE_ALL); // Note ORT_ENABLE_BASIC is useful for debugging.
+        sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL); // Note ORT_ENABLE_BASIC is useful for debugging.
         OrtSessionOptionsAppendExecutionProvider_CPU(sessionOptions, /*use_arena*/ true);
 
         ortApi.AddFreeDimensionOverrideByName(sessionOptions, "batch_size", 1);

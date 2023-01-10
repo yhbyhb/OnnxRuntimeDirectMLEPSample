@@ -30,7 +30,14 @@
 
 constexpr bool USE_DML_EXECUTION_PROVIDER = true;
 constexpr bool PASS_TENSORS_AS_D3D_RESOURCES = true;
-constexpr bool EXPORT_ORT_FILE = false;
+constexpr bool EXPORT_OPTIMIZED_FILE = false;
+constexpr wchar_t const* OPTIMIZED_FILENAME = L"optimized.ort";
+constexpr GraphOptimizationLevel GRAPH_OPTIMIZATION_LEVEL = GraphOptimizationLevel::ORT_ENABLE_ALL;
+constexpr std::pair<char const*, int> NAMED_MODEL_DIMENSIONS[] =
+{
+    {"batch_size", 1},
+    // Add more here if the model has any.
+};
 
 // CPU can't accept D3D resources, as you'll just get an error "No requested allocator available".
 static_assert(USE_DML_EXECUTION_PROVIDER == true || PASS_TENSORS_AS_D3D_RESOURCES == false);
@@ -445,29 +452,48 @@ int wmain(int argc, wchar_t* argv[])
         Ort::SessionOptions sessionOptions;
         sessionOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
         sessionOptions.DisableMemPattern();
-        sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL); // Note ORT_ENABLE_BASIC is useful for debugging.
-        OrtSessionOptionsAppendExecutionProvider_CPU(sessionOptions, /*use_arena*/ true);
+        sessionOptions.SetGraphOptimizationLevel(GRAPH_OPTIMIZATION_LEVEL);
 
-        ortApi.AddFreeDimensionOverrideByName(sessionOptions, "batch_size", 1);
+        // Set any named dimensions here, if applicable:
+        for (auto namedDimension : NAMED_MODEL_DIMENSIONS)
+        {
+            ortApi.AddFreeDimensionOverrideByName(sessionOptions, namedDimension.first, namedDimension.second); // Nop if the model has no such name.
+        }
 
         // Test export and reload of optimized model.
-        if (EXPORT_ORT_FILE)
+        // Note this optimized model cannot be safely reloaded on a different machine or different GPU,
+        // or necessarily even after installing a new driver on the same machine. All parameters must
+        // match.
+        if (EXPORT_OPTIMIZED_FILE)
         {
             Ort::SessionOptions sessionOptions2(sessionOptions.Clone());
-            sessionOptions2.SetOptimizedModelFilePath(L"optimized.ort");
+
+            // If exporting to optimized .onnx/.ort, then be sure to disable the most aggressive optimizations which overoptimize for intention
+            // of reloading the model later.
+            GraphOptimizationLevel minimumOptimizationLevel = EXPORT_OPTIMIZED_FILE ? GraphOptimizationLevel::ORT_ENABLE_EXTENDED : GraphOptimizationLevel::ORT_ENABLE_ALL;
+            sessionOptions2.SetGraphOptimizationLevel(std::min(GRAPH_OPTIMIZATION_LEVEL, minimumOptimizationLevel));
+
+            sessionOptions2.SetOptimizedModelFilePath(OPTIMIZED_FILENAME);
             if (USE_DML_EXECUTION_PROVIDER)
             {
                 ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions2, 0);
             }
+            sessionOptions.SetGraphOptimizationLevel(GRAPH_OPTIMIZATION_LEVEL);
             Ort::Session session2 = Ort::Session(ortEnvironment, modelFilePath, sessionOptions2);
-            printf("Optimized version of '%S' exported to 'optimized.ort'.\n", modelFilePath);
-            modelFilePath = L"optimized.ort";
+            printf("Optimized version of '%S' exported to '%S'.\n", modelFilePath, OPTIMIZED_FILENAME);
+            modelFilePath = OPTIMIZED_FILENAME;
         }
 
         if (USE_DML_EXECUTION_PROVIDER)
         {
             printf("Adding the DirectML execution provider.\n");
             ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions, 0); // TODO: Change this to an explicit device id, not just 0 using adapter above.
+        }
+
+        if (!USE_DML_EXECUTION_PROVIDER)
+        {
+            // Note you may also want to add this line even if DML is being used if you're okay with CPU fallback and tire of seeing the warning.
+            OrtSessionOptionsAppendExecutionProvider_CPU(sessionOptions, /*use_arena*/ true);
         }
 
         printf("DLL path ONNX Runtime: %s\n", GetModuleFileName("onnxruntime.dll").c_str());

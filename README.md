@@ -13,7 +13,7 @@ Just testing the DirectML execution provider in ONNX Runtime via D3D resources i
 
 ## Building
 - Standard Visual Studio msbuild project.
-- The Nuget dependencies [onnxruntime.dll 1.12](https://www.nuget.org/packages/Microsoft.ML.OnnxRuntime.DirectML/) and [directml.dll 1.9.0](https://www.nuget.org/packages/Microsoft.AI.DirectML/) should automatically be copied into your build folder (and after building, it all just works 🤞).
+- The Nuget dependencies [onnxruntime.dll 1.13](https://www.nuget.org/packages/Microsoft.ML.OnnxRuntime.DirectML/) and [directml.dll 1.10.1](https://www.nuget.org/packages/Microsoft.AI.DirectML/) should automatically be copied into your build folder (and after building, it all just works 🤞).
 
 ## Related
 - https://github.com/microsoft/DirectML

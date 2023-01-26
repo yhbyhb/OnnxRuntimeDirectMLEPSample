@@ -220,6 +220,34 @@ ScalarUnion ReadTensorElementOfDataType(void const* data, ONNXTensorElementDataT
 }
 
 
+void WriteTensorValue(
+    void* data, // Must point to memory that has at least the number of bytes specified by the dataType.
+    ONNXTensorElementDataType dataType,
+    ScalarUnion value
+)
+{
+    switch (dataType)
+    {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:    *reinterpret_cast<float16m10e5s1_t*>(data) = static_cast<float>(value.f); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:   *reinterpret_cast<float16m7e8s1_t*>(data) = static_cast<float>(value.f); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:      *reinterpret_cast<float*>   (data) = static_cast<float>   (value.f); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:     *reinterpret_cast<double*>  (data) = static_cast<double>  (value.f); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:  *reinterpret_cast<float*>   (data) = static_cast<float>   (value.f); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128: *reinterpret_cast<double*>  (data) = static_cast<double>  (value.f); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:       *reinterpret_cast<bool*>    (data) = static_cast<bool>    (value.u); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:      *reinterpret_cast<uint8_t*> (data) = static_cast<uint8_t> (value.u); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:     *reinterpret_cast<uint16_t*>(data) = static_cast<uint16_t>(value.u); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:     *reinterpret_cast<uint32_t*>(data) = static_cast<uint32_t>(value.u); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:     *reinterpret_cast<uint64_t*>(data) = static_cast<uint64_t>(value.u); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:       *reinterpret_cast<int8_t*>  (data) = static_cast<int8_t>  (value.i); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:      *reinterpret_cast<int16_t*> (data) = static_cast<int16_t> (value.i); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:      *reinterpret_cast<int32_t*> (data) = static_cast<int32_t> (value.i); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:      *reinterpret_cast<int64_t*> (data) = static_cast<int64_t> (value.i); break;
+    default: throw std::ios::failure("Unsupported data type for tensor.");
+    }
+}
+
+
 // Write a value to the given pointer as the type.
 template <typename T>
 void WriteTensorElementOfDataType(void* data, ONNXTensorElementDataType dataType, T newValue)
@@ -372,6 +400,7 @@ bool BindValues(
 
 void PrintFirstNValues(std::span<const std::byte> data, size_t n, ONNXTensorElementDataType dataType);
 void PrintTopNValues(std::span<const std::byte> data, size_t n, ONNXTensorElementDataType dataType);
+void FillIntegerValues(std::span<std::byte> data, ONNXTensorElementDataType dataType, int64_t value);
 void GenerateValueSequence(std::span<std::byte> data, ONNXTensorElementDataType dataType);
 
 
@@ -709,6 +738,7 @@ bool BindValues(
     // Fill input tensor with an increasing sequence.
     if (isInputTensor)
     {
+        //FillIntegerValues(/*out*/ tensorValues, tensorDataType, 0); // Alternate pattern.
         GenerateValueSequence(/*out*/ tensorValues, tensorDataType);
     }
 
@@ -766,6 +796,18 @@ bool BindValues(
 }
 
 
+void FillIntegerValues(std::span<std::byte> data, ONNXTensorElementDataType dataType, ScalarUnion value)
+{
+    size_t const bytesPerElement = ByteSizeOfOnnxTensorElementDataType(dataType);
+    size_t const elementCount = data.size_bytes() / bytesPerElement;
+
+    for (size_t i = 0, ci = elementCount; i < ci; ++i)
+    {
+        WriteTensorValue(&data[i * bytesPerElement], dataType, value);
+    }
+}
+
+
 void GenerateValueSequence(std::span<std::byte> data, ONNXTensorElementDataType dataType)
 {
     size_t const bytesPerElement = ByteSizeOfOnnxTensorElementDataType(dataType);
@@ -773,8 +815,7 @@ void GenerateValueSequence(std::span<std::byte> data, ONNXTensorElementDataType 
 
     for (size_t i = 0, ci = elementCount; i < ci; ++i)
     {
-        assert(&data[i * bytesPerElement] < data.data() + data.size());
-        WriteTensorElementOfDataType<size_t>(&data[i * bytesPerElement], dataType, i);
+        WriteTensorElementOfDataType(&data[i * bytesPerElement], dataType, static_cast<uint32_t>(i));
     }
 }
 

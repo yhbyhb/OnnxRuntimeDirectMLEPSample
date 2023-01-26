@@ -29,7 +29,7 @@
 // Configuration
 
 constexpr bool USE_DML_EXECUTION_PROVIDER = true;
-constexpr bool PASS_TENSORS_AS_D3D_RESOURCES = true;
+constexpr bool PASS_TENSORS_AS_D3D_RESOURCES = true && USE_DML_EXECUTION_PROVIDER;
 constexpr bool EXPORT_OPTIMIZED_FILE = false;
 constexpr wchar_t const* OPTIMIZED_FILENAME = L"optimized.ort";
 constexpr GraphOptimizationLevel GRAPH_OPTIMIZATION_LEVEL = GraphOptimizationLevel::ORT_ENABLE_ALL;
@@ -503,7 +503,7 @@ int wmain(int argc, wchar_t* argv[])
         // Load the model
 
         printf("Loading model '%S'.\n", modelFilePath);
-        Ort::Session session = Ort::Session(ortEnvironment, modelFilePath, sessionOptions);
+        Ort::Session session(ortEnvironment, modelFilePath, sessionOptions);
         QueryPerformanceCounter(&sessionCreationTime);
 
         Ort::IoBinding ioBinding = Ort::IoBinding::IoBinding(session);

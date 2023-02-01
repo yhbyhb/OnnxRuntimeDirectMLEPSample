@@ -99,7 +99,7 @@ size_t IsSupportedOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      return true;
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       return true;
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return false; // 32*2
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return false;
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return false;
     default: return 1;
     }

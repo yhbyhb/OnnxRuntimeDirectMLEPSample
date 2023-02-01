@@ -28,6 +28,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Configuration
 
+#define MINIMAL_EXAMPLE 0
+
 constexpr bool USE_DML_EXECUTION_PROVIDER = true;
 constexpr bool PASS_TENSORS_AS_D3D_RESOURCES = true && USE_DML_EXECUTION_PROVIDER;
 constexpr bool EXPORT_OPTIMIZED_FILE = false;
@@ -153,6 +155,57 @@ template <typename T> void WriteTensorElementOfDataType(void* data, ONNXTensorEl
 
 ////////////////////////////////////////////////////////////////////////////////
 // Main execution
+
+
+// This minimal reference is just for easier initial understanding.
+// See the one below for efficiently binding to GPU resources.
+#if MINIMAL_EXAMPLE
+
+int main(int argc, char* argv[])
+{
+    std::string_view modelFileConstant = "Upsample4xOpset11.onnx";
+    #ifdef _WIN32
+    std::wstring wideString = std::wstring(modelFileConstant.begin(), modelFileConstant.end());
+    std::basic_string<ORTCHAR_T> modelFile = std::basic_string<ORTCHAR_T>(wideString);
+    #else
+    std::string modelFile = modelFileConstant;
+    #endif
+    std::cout << "Loading " << modelFileConstant << std::endl;
+
+    OrtApi const& ortApi = Ort::GetApi(); // Uses ORT_API_VERSION
+    const OrtDmlApi* ortDmlApi;
+    ortApi.GetExecutionProviderApi("DML", ORT_API_VERSION, reinterpret_cast<const void**>(&ortDmlApi));
+
+    Ort::Env environment(ORT_LOGGING_LEVEL_WARNING, "DirectML_Direct3D_TensorAllocation_Test"); // Note ORT_LOGGING_LEVEL_VERBOSE is useful too.
+    Ort::SessionOptions sessionOptions;
+    sessionOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+    sessionOptions.DisableMemPattern();
+
+    constexpr uint32_t batchSize = 1;
+    ortApi.AddFreeDimensionOverrideByName(sessionOptions, "batch_size", batchSize);
+
+    ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions, /*device index*/ 0);
+    // Preferred approach above. Deprecated: OrtSessionOptionsAppendExecutionProvider_DML(sessionOptions, 0);
+    Ort::Session session(environment, modelFile.c_str(), sessionOptions);
+
+    std::vector<int64_t> inputShape = {batchSize, 3, 100, 100};
+    std::vector<float> inputTensorValues(batchSize * 3 * 100 * 100, 0.0f);
+
+    std::vector<Ort::Value> inputTensors;
+    Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtArenaAllocator, OrtMemType::OrtMemTypeDefault);
+    inputTensors.push_back(Ort::Value::CreateTensor<float>(memoryInfo, inputTensorValues.data(), inputTensorValues.size(), inputShape.data(), inputShape.size()));
+
+    std::vector<char const*> inputNames = {"input"};
+    std::vector<char const*> outputNames = {"output"};
+
+    std::vector<Ort::Value> outputs = session.Run(Ort::RunOptions{}, inputNames.data(), inputTensors.data(), inputTensors.size(), outputNames.data(), outputNames.size());
+
+    std::cout << "Output count: " << outputs.size() << std::endl;
+    std::cout << "Output is tensor: " << ((!outputs.empty() && outputs[0] != nullptr && outputs[0].IsTensor()) ? "true" : "false") << std::endl;
+    return 0;
+}
+
+#else // !MINIMAL_EXAMPLE
 
 int wmain(int argc, wchar_t* argv[])
 {
@@ -434,6 +487,8 @@ int wmain(int argc, wchar_t* argv[])
 
     return EXIT_SUCCESS;
 }
+
+#endif // MINIMAL_EXAMPLE
 
 
 bool BindValues(

@@ -79,111 +79,6 @@ struct ComPtr : public Microsoft::WRL::ComPtr<T>
     operator T* () { return this->Get(); }
 };
 
-
-size_t IsSupportedOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
-{
-    switch (dataType)
-    {
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:   return false;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:      return false;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return false;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return false;
-    default: return 1;
-    }
-}
-
-
-size_t ByteSizeOfOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
-{
-    switch (dataType)
-    {
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:   return 1;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        return 1;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       return 1;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        return 1;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:      return 1;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      return 2;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       return 2;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     return 2;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    return 2;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       return 4;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      return 4;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       return 4;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      return 8;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       return 8;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      return 8;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return 8; // 32*2
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return 16;
-    default: return 1;
-    }
-}
-
-
-char const* NameOfOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
-{
-    switch (dataType)
-    {
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:   return "undefined";
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        return "bool8";
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       return "uint8";
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        return "int8";
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:      return "char8[]";
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      return "uint16";
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       return "int16";
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     return "float16m10e5s1";
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    return "float16m8e7s1";
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       return "int32";
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      return "uint32";
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       return "float32";
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      return "uint64";
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       return "int64";
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      return "float64";
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return "float32x2";
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return "float64x2";
-    default: return "unknown";
-    }
-}
-
-
-bool IsSignedTensorElementDataType(ONNXTensorElementDataType dataType)
-{
-    switch (dataType)
-    {
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        return false;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       return false;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      return false;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      return false;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      return false;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return true;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:
-    default: return false;
-    }
-}
-
-
 // Collection of 64-bit unsigned integer, signed integer, and float, which is the superset of the data types.
 union ScalarUnion
 {
@@ -191,164 +86,6 @@ union ScalarUnion
     int64_t i;
     double f;
 };
-
-
-// Read the data at the given pointer as the type, expanding it to 64 bits.
-ScalarUnion ReadTensorElementOfDataType(void const* data, ONNXTensorElementDataType dataType)
-{
-    switch (dataType)
-    {
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        return ScalarUnion{ .u = *reinterpret_cast<bool const*>(data) };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       return ScalarUnion{ .u = *reinterpret_cast<uint8_t const*>(data) };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        return ScalarUnion{ .i = *reinterpret_cast<int8_t const*>(data) };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      return ScalarUnion{ .u = *reinterpret_cast<uint16_t const*>(data) };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       return ScalarUnion{ .i = *reinterpret_cast<int16_t const*>(data) };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     return ScalarUnion{ .f = *reinterpret_cast<float16m10e5s1_t const*>(data) };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    return ScalarUnion{ .f = *reinterpret_cast<float16m7e8s1_t const*>(data) };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       return ScalarUnion{ .i = *reinterpret_cast<int32_t const*>(data) };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      return ScalarUnion{ .u = *reinterpret_cast<uint32_t const*>(data) };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       return ScalarUnion{ .f = *reinterpret_cast<float32_t const*>(data) };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      return ScalarUnion{ .u = *reinterpret_cast<uint64_t const*>(data) };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       return ScalarUnion{ .i = *reinterpret_cast<int64_t const*>(data) };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      return ScalarUnion{ .f = *reinterpret_cast<float64_t const*>(data) };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return ScalarUnion{ .f = reinterpret_cast<std::pair<float32_t, float32_t> const*>(data)->first };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return ScalarUnion{ .f = reinterpret_cast<std::pair<float64_t, float64_t> const*>(data)->first };
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:
-    default: return ScalarUnion{ .u = 0 };
-    }
-}
-
-
-void WriteTensorValue(
-    void* data, // Must point to memory that has at least the number of bytes specified by the dataType.
-    ONNXTensorElementDataType dataType,
-    ScalarUnion value
-)
-{
-    switch (dataType)
-    {
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:    *reinterpret_cast<float16m10e5s1_t*>(data) = static_cast<float>(value.f); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:   *reinterpret_cast<float16m7e8s1_t*>(data) = static_cast<float>(value.f); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:      *reinterpret_cast<float*>   (data) = static_cast<float>   (value.f); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:     *reinterpret_cast<double*>  (data) = static_cast<double>  (value.f); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:  *reinterpret_cast<float*>   (data) = static_cast<float>   (value.f); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128: *reinterpret_cast<double*>  (data) = static_cast<double>  (value.f); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:       *reinterpret_cast<bool*>    (data) = static_cast<bool>    (value.u); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:      *reinterpret_cast<uint8_t*> (data) = static_cast<uint8_t> (value.u); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:     *reinterpret_cast<uint16_t*>(data) = static_cast<uint16_t>(value.u); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:     *reinterpret_cast<uint32_t*>(data) = static_cast<uint32_t>(value.u); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:     *reinterpret_cast<uint64_t*>(data) = static_cast<uint64_t>(value.u); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:       *reinterpret_cast<int8_t*>  (data) = static_cast<int8_t>  (value.i); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:      *reinterpret_cast<int16_t*> (data) = static_cast<int16_t> (value.i); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:      *reinterpret_cast<int32_t*> (data) = static_cast<int32_t> (value.i); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:      *reinterpret_cast<int64_t*> (data) = static_cast<int64_t> (value.i); break;
-    default: throw std::ios::failure("Unsupported data type for tensor.");
-    }
-}
-
-
-// Write a value to the given pointer as the type.
-template <typename T>
-void WriteTensorElementOfDataType(void* data, ONNXTensorElementDataType dataType, T newValue)
-{
-    switch (dataType)
-    {
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        *reinterpret_cast<bool*>(data) = static_cast<bool>(newValue); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       *reinterpret_cast<uint8_t*>(data) = static_cast<uint8_t>(newValue); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        *reinterpret_cast<int8_t*>(data) = static_cast<int8_t>(newValue); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      *reinterpret_cast<uint16_t*>(data) = static_cast<uint16_t>(newValue); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       *reinterpret_cast<int16_t*>(data) = static_cast<int16_t>(newValue); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     *reinterpret_cast<float16m10e5s1_t*>(data) = static_cast<float16m10e5s1_t>(float32_t(newValue)); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    *reinterpret_cast<float16m7e8s1_t*>(data) = static_cast<float16m7e8s1_t>(float32_t(newValue)); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       *reinterpret_cast<int32_t*>(data) = static_cast<int32_t>(newValue); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      *reinterpret_cast<uint32_t*>(data) = static_cast<uint32_t>(newValue); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       *reinterpret_cast<float32_t*>(data) = static_cast<float>(newValue); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      *reinterpret_cast<uint64_t*>(data) = static_cast<uint64_t>(newValue); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       *reinterpret_cast<int64_t*>(data) = static_cast<int64_t>(newValue); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      *reinterpret_cast<float64_t*>(data) = static_cast<double>(newValue); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   reinterpret_cast<std::pair<float32_t, float32_t>*>(data)->first = static_cast<float32_t>(newValue); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  reinterpret_cast<std::pair<float64_t, float64_t>*>(data)->first = static_cast<float64_t>(newValue); break;
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:
-    default: break; // Do nothing.
-    }
-}
-
-
-void FormatTypedElement(void const* data, ONNXTensorElementDataType dataType, /*out*/ std::span<char> buffer)
-{
-    if (buffer.empty())
-        return;
-
-    ScalarUnion value = ReadTensorElementOfDataType(data, dataType);
-    std::to_chars_result charsResult;
-    char* dataEnd = buffer.data() + buffer.size();
-
-    switch (dataType)
-    {
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:
-        charsResult = std::to_chars(buffer.data(), dataEnd, value.u);
-        break;
-
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:
-        charsResult = std::to_chars(buffer.data(), dataEnd, value.i);
-        break;
-
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:
-        charsResult = std::to_chars(buffer.data(), dataEnd, value.f);
-        break;
-
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:
-    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:
-    default:
-        strncpy_s(buffer.data(), buffer.size(), "unsupported", buffer.size() - 1);
-        return;
-    }
-
-    // Ensure null terminator.
-    if (charsResult.ptr == dataEnd)
-    {
-        --charsResult.ptr;
-    }
-    *charsResult.ptr = '\0';
-}
-
-
-std::string GetTensorName(size_t index, Ort::Session const& session, bool isInput)
-{
-    Ort::AllocatorWithDefaultOptions allocator;
-    Ort::AllocatedStringPtr name = isInput ? session.GetInputNameAllocated(index, allocator) : session.GetOutputNameAllocated(index, allocator);
-    std::string returnName(name.get());
-    name.release();
-    return returnName;
-}
-
-
-std::string GetModuleFileName(char const* moduleName)
-{
-    HMODULE module = GetModuleHandleA(moduleName);
-    if (module == nullptr)
-    {
-        return "";
-    }
-
-    std::string fileName(MAX_PATH + 1, '\0');
-    GetModuleFileNameA(module, /*out*/ fileName.data(), MAX_PATH);
-    return fileName;
-}
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -402,6 +139,16 @@ void PrintFirstNValues(std::span<const std::byte> data, size_t n, ONNXTensorElem
 void PrintTopNValues(std::span<const std::byte> data, size_t n, ONNXTensorElementDataType dataType);
 void FillIntegerValues(std::span<std::byte> data, ONNXTensorElementDataType dataType, int64_t value);
 void GenerateValueSequence(std::span<std::byte> data, ONNXTensorElementDataType dataType);
+void FormatTypedElement(void const* data, ONNXTensorElementDataType dataType, /*out*/ std::span<char> buffer);
+std::string GetModuleFileName(char const* moduleName);
+std::string GetTensorName(size_t index, Ort::Session const& session, bool isInput);
+size_t IsSupportedOnnxTensorElementDataType(ONNXTensorElementDataType dataType);
+size_t ByteSizeOfOnnxTensorElementDataType(ONNXTensorElementDataType dataType);
+char const* NameOfOnnxTensorElementDataType(ONNXTensorElementDataType dataType);
+bool IsSignedTensorElementDataType(ONNXTensorElementDataType dataType);
+ScalarUnion ReadTensorElementOfDataType(void const* data, ONNXTensorElementDataType dataType);
+void WriteTensorValue(void* data, ONNXTensorElementDataType dataType, ScalarUnion);;
+template <typename T> void WriteTensorElementOfDataType(void* data, ONNXTensorElementDataType dataType, T newValue);
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -505,7 +252,7 @@ int wmain(int argc, wchar_t* argv[])
             sessionOptions2.SetOptimizedModelFilePath(OPTIMIZED_FILENAME);
             if (USE_DML_EXECUTION_PROVIDER)
             {
-                ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions2, 0);
+                ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions2, /*device index*/ 0);
             }
             sessionOptions.SetGraphOptimizationLevel(GRAPH_OPTIMIZATION_LEVEL);
             Ort::Session session2 = Ort::Session(ortEnvironment, modelFilePath, sessionOptions2);
@@ -516,7 +263,7 @@ int wmain(int argc, wchar_t* argv[])
         if (USE_DML_EXECUTION_PROVIDER)
         {
             printf("Adding the DirectML execution provider.\n");
-            ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions, 0); // TODO: Change this to an explicit device id, not just 0 using adapter above.
+            ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions, /*device index*/ 0);
         }
 
         if (!USE_DML_EXECUTION_PROVIDER)
@@ -796,92 +543,6 @@ bool BindValues(
 }
 
 
-void FillIntegerValues(std::span<std::byte> data, ONNXTensorElementDataType dataType, ScalarUnion value)
-{
-    size_t const bytesPerElement = ByteSizeOfOnnxTensorElementDataType(dataType);
-    size_t const elementCount = data.size_bytes() / bytesPerElement;
-
-    for (size_t i = 0, ci = elementCount; i < ci; ++i)
-    {
-        WriteTensorValue(&data[i * bytesPerElement], dataType, value);
-    }
-}
-
-
-void GenerateValueSequence(std::span<std::byte> data, ONNXTensorElementDataType dataType)
-{
-    size_t const bytesPerElement = ByteSizeOfOnnxTensorElementDataType(dataType);
-    size_t const elementCount = data.size_bytes() / bytesPerElement;
-
-    for (size_t i = 0, ci = elementCount; i < ci; ++i)
-    {
-        WriteTensorElementOfDataType(&data[i * bytesPerElement], dataType, static_cast<uint32_t>(i));
-    }
-}
-
-
-void PrintFirstNValues(std::span<const std::byte> data, size_t n, ONNXTensorElementDataType dataType)
-{
-    size_t const bytesPerElement = ByteSizeOfOnnxTensorElementDataType(dataType);
-    size_t const elementCount = data.size_bytes() / bytesPerElement;
-    n = std::min(n, elementCount);
-
-    char numberBuffer[40];
-
-    // Print the first 10 and top 10 results.
-    printf("  First %zu/%zu results:\n", n, elementCount);
-    for (size_t i = 0; i < n; ++i)
-    {
-        FormatTypedElement(&data[i * bytesPerElement], dataType, /*out*/ numberBuffer);
-        printf("    element[%zu] = %s\n", i, numberBuffer);
-    }
-}
-
-
-void PrintTopNValues(std::span<const std::byte> data, size_t n, ONNXTensorElementDataType dataType)
-{
-    size_t const bytesPerElement = ByteSizeOfOnnxTensorElementDataType(dataType);
-    size_t const elementCount = data.size_bytes() / bytesPerElement;
-    n = std::min(n, elementCount);
-
-    char numberBuffer[40];
-
-    size_t maxSortSize = 10'000;
-    if (elementCount > maxSortSize)
-        return;
-
-    printf("  Top %zu/%zu results:\n", n, elementCount);
-
-    std::vector<uint32_t> indices(elementCount, 0);
-    std::iota(indices.begin(), indices.end(), 0);
-
-    std::byte const* dataPointer = data.data();
-    // Determine whether the data type is signed ahead of time so that unsigned comparisons
-    // correctly place positive numbers before negative ones. All comparisons regardless of
-    // data type are done bitwise (which is safe even for floating point numbers).
-    uint64_t const signInversion = IsSignedTensorElementDataType(dataType) ? (uint64_t(1) << 63) : 0;
-
-    sort(
-        indices.begin(),
-        indices.end(),
-        [&, dataPointer, bytesPerElement, dataType](uint32_t a, uint32_t b)
-        {
-            ScalarUnion valueA = ReadTensorElementOfDataType(&dataPointer[a * bytesPerElement], dataType);
-            ScalarUnion valueB = ReadTensorElementOfDataType(&dataPointer[b * bytesPerElement], dataType);
-            valueA.u ^= signInversion;
-            valueB.u ^= signInversion;
-            return valueA.u > valueB.u;
-        }
-    );
-
-    for (size_t i = 0; i < n; ++i)
-    {
-        FormatTypedElement(&data[indices[i] * bytesPerElement], dataType, /*out*/ numberBuffer);
-        printf("    element[%u] = %s\n", indices[i], numberBuffer);
-    }
-}
-
-
 ComPtr<ID3D12Resource> CreateD3D12ResourceOfByteSize(
     ID3D12Device* d3dDevice,
     size_t resourceByteSize,
@@ -1132,4 +793,352 @@ void DownloadTensorData(
     THROW_IF_FAILED(downloadBuffer->Map(0, &range, reinterpret_cast<void**>(&sourceData)));
     memcpy(destinationData.data(), sourceData, clampedDataByteSize);
     downloadBuffer->Unmap(0, nullptr);
+}
+
+
+size_t IsSupportedOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
+{
+    switch (dataType)
+    {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:   return false;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:      return false;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return false;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return false;
+    default: return 1;
+    }
+}
+
+
+size_t ByteSizeOfOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
+{
+    switch (dataType)
+    {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:   return 1;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        return 1;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       return 1;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        return 1;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:      return 1;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      return 2;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       return 2;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     return 2;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    return 2;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       return 4;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      return 4;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       return 4;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      return 8;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       return 8;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      return 8;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return 8; // 32*2
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return 16;
+    default: return 1;
+    }
+}
+
+
+char const* NameOfOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
+{
+    switch (dataType)
+    {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:   return "undefined";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        return "bool8";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       return "uint8";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        return "int8";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:      return "char8[]";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      return "uint16";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       return "int16";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     return "float16m10e5s1";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    return "float16m8e7s1";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       return "int32";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      return "uint32";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       return "float32";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      return "uint64";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       return "int64";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      return "float64";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return "float32x2";
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return "float64x2";
+    default: return "unknown";
+    }
+}
+
+
+bool IsSignedTensorElementDataType(ONNXTensorElementDataType dataType)
+{
+    switch (dataType)
+    {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        return false;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       return false;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      return false;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      return false;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      return false;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return true;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:
+    default: return false;
+    }
+}
+
+
+// Read the data at the given pointer as the type, expanding it to 64 bits.
+ScalarUnion ReadTensorElementOfDataType(void const* data, ONNXTensorElementDataType dataType)
+{
+    switch (dataType)
+    {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        return ScalarUnion{ .u = *reinterpret_cast<bool const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       return ScalarUnion{ .u = *reinterpret_cast<uint8_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        return ScalarUnion{ .i = *reinterpret_cast<int8_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      return ScalarUnion{ .u = *reinterpret_cast<uint16_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       return ScalarUnion{ .i = *reinterpret_cast<int16_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     return ScalarUnion{ .f = *reinterpret_cast<float16m10e5s1_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    return ScalarUnion{ .f = *reinterpret_cast<float16m7e8s1_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       return ScalarUnion{ .i = *reinterpret_cast<int32_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      return ScalarUnion{ .u = *reinterpret_cast<uint32_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       return ScalarUnion{ .f = *reinterpret_cast<float32_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      return ScalarUnion{ .u = *reinterpret_cast<uint64_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       return ScalarUnion{ .i = *reinterpret_cast<int64_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      return ScalarUnion{ .f = *reinterpret_cast<float64_t const*>(data) };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   return ScalarUnion{ .f = reinterpret_cast<std::pair<float32_t, float32_t> const*>(data)->first };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  return ScalarUnion{ .f = reinterpret_cast<std::pair<float64_t, float64_t> const*>(data)->first };
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:
+    default: return ScalarUnion{ .u = 0 };
+    }
+}
+
+
+void WriteTensorValue(
+    void* data, // Must point to memory that has at least the number of bytes specified by the dataType.
+    ONNXTensorElementDataType dataType,
+    ScalarUnion value
+)
+{
+    switch (dataType)
+    {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:    *reinterpret_cast<float16m10e5s1_t*>(data) = static_cast<float>(value.f); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:   *reinterpret_cast<float16m7e8s1_t*>(data) = static_cast<float>(value.f); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:      *reinterpret_cast<float*>   (data) = static_cast<float>   (value.f); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:     *reinterpret_cast<double*>  (data) = static_cast<double>  (value.f); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:  *reinterpret_cast<float*>   (data) = static_cast<float>   (value.f); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128: *reinterpret_cast<double*>  (data) = static_cast<double>  (value.f); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:       *reinterpret_cast<bool*>    (data) = static_cast<bool>    (value.u); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:      *reinterpret_cast<uint8_t*> (data) = static_cast<uint8_t> (value.u); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:     *reinterpret_cast<uint16_t*>(data) = static_cast<uint16_t>(value.u); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:     *reinterpret_cast<uint32_t*>(data) = static_cast<uint32_t>(value.u); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:     *reinterpret_cast<uint64_t*>(data) = static_cast<uint64_t>(value.u); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:       *reinterpret_cast<int8_t*>  (data) = static_cast<int8_t>  (value.i); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:      *reinterpret_cast<int16_t*> (data) = static_cast<int16_t> (value.i); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:      *reinterpret_cast<int32_t*> (data) = static_cast<int32_t> (value.i); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:      *reinterpret_cast<int64_t*> (data) = static_cast<int64_t> (value.i); break;
+    default: throw std::ios::failure("Unsupported data type for tensor.");
+    }
+}
+
+
+// Write a value to the given pointer as the type.
+template <typename T>
+void WriteTensorElementOfDataType(void* data, ONNXTensorElementDataType dataType, T newValue)
+{
+    switch (dataType)
+    {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:        *reinterpret_cast<bool*>(data) = static_cast<bool>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:       *reinterpret_cast<uint8_t*>(data) = static_cast<uint8_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:        *reinterpret_cast<int8_t*>(data) = static_cast<int8_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:      *reinterpret_cast<uint16_t*>(data) = static_cast<uint16_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:       *reinterpret_cast<int16_t*>(data) = static_cast<int16_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:     *reinterpret_cast<float16m10e5s1_t*>(data) = static_cast<float16m10e5s1_t>(float32_t(newValue)); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:    *reinterpret_cast<float16m7e8s1_t*>(data) = static_cast<float16m7e8s1_t>(float32_t(newValue)); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:       *reinterpret_cast<int32_t*>(data) = static_cast<int32_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:      *reinterpret_cast<uint32_t*>(data) = static_cast<uint32_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:       *reinterpret_cast<float32_t*>(data) = static_cast<float>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:      *reinterpret_cast<uint64_t*>(data) = static_cast<uint64_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:       *reinterpret_cast<int64_t*>(data) = static_cast<int64_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:      *reinterpret_cast<float64_t*>(data) = static_cast<double>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:   reinterpret_cast<std::pair<float32_t, float32_t>*>(data)->first = static_cast<float32_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:  reinterpret_cast<std::pair<float64_t, float64_t>*>(data)->first = static_cast<float64_t>(newValue); break;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:
+    default: break; // Do nothing.
+    }
+}
+
+
+void FormatTypedElement(void const* data, ONNXTensorElementDataType dataType, /*out*/ std::span<char> buffer)
+{
+    if (buffer.empty())
+        return;
+
+    ScalarUnion value = ReadTensorElementOfDataType(data, dataType);
+    std::to_chars_result charsResult;
+    char* dataEnd = buffer.data() + buffer.size();
+
+    switch (dataType)
+    {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:
+        charsResult = std::to_chars(buffer.data(), dataEnd, value.u);
+        break;
+
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:
+        charsResult = std::to_chars(buffer.data(), dataEnd, value.i);
+        break;
+
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:
+        charsResult = std::to_chars(buffer.data(), dataEnd, value.f);
+        break;
+
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED:
+    default:
+        strncpy_s(buffer.data(), buffer.size(), "unsupported", buffer.size() - 1);
+        return;
+    }
+
+    // Ensure null terminator.
+    if (charsResult.ptr == dataEnd)
+    {
+        --charsResult.ptr;
+    }
+    *charsResult.ptr = '\0';
+}
+
+
+std::string GetTensorName(size_t index, Ort::Session const& session, bool isInput)
+{
+    Ort::AllocatorWithDefaultOptions allocator;
+    Ort::AllocatedStringPtr name = isInput ? session.GetInputNameAllocated(index, allocator) : session.GetOutputNameAllocated(index, allocator);
+    std::string returnName(name.get());
+    name.release();
+    return returnName;
+}
+
+
+std::string GetModuleFileName(char const* moduleName)
+{
+    HMODULE module = GetModuleHandleA(moduleName);
+    if (module == nullptr)
+    {
+        return "";
+    }
+
+    std::string fileName(MAX_PATH + 1, '\0');
+    GetModuleFileNameA(module, /*out*/ fileName.data(), MAX_PATH);
+    return fileName;
+}
+
+
+void FillIntegerValues(std::span<std::byte> data, ONNXTensorElementDataType dataType, ScalarUnion value)
+{
+    size_t const bytesPerElement = ByteSizeOfOnnxTensorElementDataType(dataType);
+    size_t const elementCount = data.size_bytes() / bytesPerElement;
+
+    for (size_t i = 0, ci = elementCount; i < ci; ++i)
+    {
+        WriteTensorValue(&data[i * bytesPerElement], dataType, value);
+    }
+}
+
+
+void GenerateValueSequence(std::span<std::byte> data, ONNXTensorElementDataType dataType)
+{
+    size_t const bytesPerElement = ByteSizeOfOnnxTensorElementDataType(dataType);
+    size_t const elementCount = data.size_bytes() / bytesPerElement;
+
+    for (size_t i = 0, ci = elementCount; i < ci; ++i)
+    {
+        WriteTensorElementOfDataType(&data[i * bytesPerElement], dataType, static_cast<uint32_t>(i));
+    }
+}
+
+
+void PrintFirstNValues(std::span<const std::byte> data, size_t n, ONNXTensorElementDataType dataType)
+{
+    size_t const bytesPerElement = ByteSizeOfOnnxTensorElementDataType(dataType);
+    size_t const elementCount = data.size_bytes() / bytesPerElement;
+    n = std::min(n, elementCount);
+
+    char numberBuffer[40];
+
+    // Print the first 10 and top 10 results.
+    printf("  First %zu/%zu results:\n", n, elementCount);
+    for (size_t i = 0; i < n; ++i)
+    {
+        FormatTypedElement(&data[i * bytesPerElement], dataType, /*out*/ numberBuffer);
+        printf("    element[%zu] = %s\n", i, numberBuffer);
+    }
+}
+
+
+void PrintTopNValues(std::span<const std::byte> data, size_t n, ONNXTensorElementDataType dataType)
+{
+    size_t const bytesPerElement = ByteSizeOfOnnxTensorElementDataType(dataType);
+    size_t const elementCount = data.size_bytes() / bytesPerElement;
+    n = std::min(n, elementCount);
+
+    char numberBuffer[40];
+
+    size_t maxSortSize = 10'000;
+    if (elementCount > maxSortSize)
+        return;
+
+    printf("  Top %zu/%zu results:\n", n, elementCount);
+
+    std::vector<uint32_t> indices(elementCount, 0);
+    std::iota(indices.begin(), indices.end(), 0);
+
+    std::byte const* dataPointer = data.data();
+    // Determine whether the data type is signed ahead of time so that unsigned comparisons
+    // correctly place positive numbers before negative ones. All comparisons regardless of
+    // data type are done bitwise (which is safe even for floating point numbers).
+    uint64_t const signInversion = IsSignedTensorElementDataType(dataType) ? (uint64_t(1) << 63) : 0;
+
+    sort(
+        indices.begin(),
+        indices.end(),
+        [&, dataPointer, bytesPerElement, dataType](uint32_t a, uint32_t b)
+        {
+            ScalarUnion valueA = ReadTensorElementOfDataType(&dataPointer[a * bytesPerElement], dataType);
+            ScalarUnion valueB = ReadTensorElementOfDataType(&dataPointer[b * bytesPerElement], dataType);
+            valueA.u ^= signInversion;
+            valueB.u ^= signInversion;
+            return valueA.u > valueB.u;
+        }
+    );
+
+    for (size_t i = 0; i < n; ++i)
+    {
+        FormatTypedElement(&data[indices[i] * bytesPerElement], dataType, /*out*/ numberBuffer);
+        printf("    element[%u] = %s\n", indices[i], numberBuffer);
+    }
 }

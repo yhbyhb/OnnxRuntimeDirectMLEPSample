@@ -290,7 +290,7 @@ int wmain(int argc, wchar_t* argv[])
 
         Ort::Env ortEnvironment(ORT_LOGGING_LEVEL_WARNING, "DirectML_Direct3D_TensorAllocation_Test"); // Note ORT_LOGGING_LEVEL_VERBOSE is useful too.
         Ort::SessionOptions sessionOptions;
-        if (USE_DML_EXECUTION_PROVIDER)
+        if (USE_DML_EXECUTION_PROVIDER) // The DML EP (at least for ORT 1.14) doesn't support PARALLEL or memory pattern.
         {
             sessionOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
             sessionOptions.DisableMemPattern();
@@ -332,10 +332,10 @@ int wmain(int argc, wchar_t* argv[])
             printf("Adding the DirectML execution provider.\n");
             ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions, /*device index*/ 0);
         }
-
-        if (!USE_DML_EXECUTION_PROVIDER)
+        else
         {
             // Note you may also want to add this line even if DML is being used if you're okay with CPU fallback and tire of seeing the warning.
+            // Technically it's not necessary to call this, as the CPU provider will be added implicitly if no others are.
             OrtSessionOptionsAppendExecutionProvider_CPU(sessionOptions, /*use_arena*/ true);
         }
 

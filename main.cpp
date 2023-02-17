@@ -144,7 +144,7 @@ void GenerateValueSequence(std::span<std::byte> data, ONNXTensorElementDataType 
 void FormatTypedElement(void const* data, ONNXTensorElementDataType dataType, /*out*/ std::span<char> buffer);
 std::string GetModuleFileName(char const* moduleName);
 std::string GetTensorName(size_t index, Ort::Session const& session, bool isInput);
-size_t IsSupportedOnnxTensorElementDataType(ONNXTensorElementDataType dataType);
+bool IsSupportedOnnxTensorElementDataType(ONNXTensorElementDataType dataType);
 size_t ByteSizeOfOnnxTensorElementDataType(ONNXTensorElementDataType dataType);
 char const* NameOfOnnxTensorElementDataType(ONNXTensorElementDataType dataType);
 bool IsSignedTensorElementDataType(ONNXTensorElementDataType dataType);
@@ -865,7 +865,7 @@ void DownloadTensorData(
 }
 
 
-size_t IsSupportedOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
+bool IsSupportedOnnxTensorElementDataType(ONNXTensorElementDataType dataType)
 {
     switch (dataType)
     {

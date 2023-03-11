@@ -13,7 +13,6 @@
 #include <memory>
 #include <charconv>
 #include <assert.h>
-#include <assert.h>
 
 #include <windows.h>
 #include <d3d12.h>
@@ -27,8 +26,6 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 // Configuration
-
-#define MINIMAL_EXAMPLE 0
 
 constexpr bool USE_DML_EXECUTION_PROVIDER = true;
 constexpr bool PASS_TENSORS_AS_D3D_RESOURCES = true && USE_DML_EXECUTION_PROVIDER;
@@ -139,7 +136,7 @@ bool BindValues(
 
 void PrintFirstNValues(std::span<const std::byte> data, size_t n, ONNXTensorElementDataType dataType);
 void PrintTopNValues(std::span<const std::byte> data, size_t n, ONNXTensorElementDataType dataType);
-void FillIntegerValues(std::span<std::byte> data, ONNXTensorElementDataType dataType, int64_t value);
+void FillIntegerValues(std::span<std::byte> data, ONNXTensorElementDataType dataType, ScalarUnion value);
 void GenerateValueSequence(std::span<std::byte> data, ONNXTensorElementDataType dataType);
 void FormatTypedElement(void const* data, ONNXTensorElementDataType dataType, /*out*/ std::span<char> buffer);
 std::string GetModuleFileName(char const* moduleName);
@@ -156,67 +153,6 @@ template <typename T> void WriteTensorElementOfDataType(void* data, ONNXTensorEl
 ////////////////////////////////////////////////////////////////////////////////
 // Main execution
 
-
-// This minimal reference is just for easier initial understanding.
-// See the one below for efficiently binding to GPU resources.
-// The minimal sample is also hard-coded to a specific model file and input sizes.
-#if MINIMAL_EXAMPLE
-
-int main(int argc, char* argv[])
-{
-    if (argc > 1)
-    {
-        std::cout << "A file parameter was given, but the minimal example build only supports one specific model." << std::endl;
-        return EXIT_FAILURE;
-    }
-
-    std::string_view modelFileConstant = "Upsample4xOpset11.onnx";
-    #ifdef _WIN32
-    std::wstring wideString = std::wstring(modelFileConstant.begin(), modelFileConstant.end());
-    std::basic_string<ORTCHAR_T> modelFile = std::basic_string<ORTCHAR_T>(wideString);
-    #else
-    std::string modelFile = modelFileConstant;
-    #endif
-    std::cout << "Loading " << modelFileConstant << std::endl;
-
-    // Get API, and setup environment.
-    OrtApi const& ortApi = Ort::GetApi(); // Uses ORT_API_VERSION
-    const OrtDmlApi* ortDmlApi;
-    ortApi.GetExecutionProviderApi("DML", ORT_API_VERSION, reinterpret_cast<const void**>(&ortDmlApi));
-    Ort::Env environment(ORT_LOGGING_LEVEL_WARNING, "DirectML_Direct3D_TensorAllocation_Test"); // Note ORT_LOGGING_LEVEL_VERBOSE is useful too.
-
-    // Set model-specific session options.
-    Ort::SessionOptions sessionOptions;
-    sessionOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL); // For DML EP
-    sessionOptions.DisableMemPattern(); // For DML EP
-    constexpr uint32_t batchSize = 1;
-    ortApi.AddFreeDimensionOverrideByName(sessionOptions, "batch_size", batchSize);
-
-    ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions, /*device index*/ 0);
-    // Preferred approach above. Deprecated: OrtSessionOptionsAppendExecutionProvider_DML(sessionOptions, 0);
-    Ort::Session session(environment, modelFile.c_str(), sessionOptions);
-
-    // Declare tensor data for binding.
-    // Just use CPU-bound resources here (see the non-minimal example for GPU binding).
-    std::vector<Ort::Value> inputTensors;
-    std::vector<int64_t> inputShape = {batchSize, 3, 100, 100};
-    std::vector<float> inputTensorValues(batchSize * 3 * 100 * 100, 0.0f);
-    Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtArenaAllocator, OrtMemType::OrtMemTypeDefault);
-    inputTensors.push_back(Ort::Value::CreateTensor<float>(memoryInfo, inputTensorValues.data(), inputTensorValues.size(), inputShape.data(), inputShape.size()));
-
-    std::vector<char const*> inputNames = {"input"};
-    std::vector<char const*> outputNames = {"output"};
-
-    // Execute the model with the given inputs and named outputs.
-    std::vector<Ort::Value> outputs = session.Run(Ort::RunOptions{}, inputNames.data(), inputTensors.data(), inputTensors.size(), outputNames.data(), outputNames.size());
-
-    std::cout << "Output count: " << outputs.size() << std::endl;
-    std::cout << "Output is tensor: " << ((!outputs.empty() && outputs[0] != nullptr && outputs[0].IsTensor()) ? "true" : "false") << std::endl;
-
-    return EXIT_SUCCESS;
-}
-
-#else // !MINIMAL_EXAMPLE
 
 int wmain(int argc, wchar_t* argv[])
 {
@@ -501,8 +437,6 @@ int wmain(int argc, wchar_t* argv[])
 
     return EXIT_SUCCESS;
 }
-
-#endif // MINIMAL_EXAMPLE
 
 
 bool BindValues(

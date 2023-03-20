@@ -31,6 +31,7 @@ constexpr bool USE_DML_EXECUTION_PROVIDER = true;
 constexpr bool PASS_TENSORS_AS_D3D_RESOURCES = true && USE_DML_EXECUTION_PROVIDER;
 constexpr bool EXPORT_OPTIMIZED_FILE = false;
 constexpr wchar_t const* OPTIMIZED_FILENAME = L"optimized.ort";
+constexpr bool FILL_INPUTS_INCREASING_SEQUENCE = true; // Fill inputs with {0,1,2...}. Otherwise just use zeros.
 constexpr GraphOptimizationLevel GRAPH_OPTIMIZATION_LEVEL = GraphOptimizationLevel::ORT_ENABLE_ALL;
 constexpr std::pair<char const*, int> NAMED_MODEL_DIMENSIONS[] =
 {
@@ -124,7 +125,6 @@ bool BindValues(
     OrtDmlApi const& ortDmlApi,
     Ort::IoBinding& ioBinding,
     Ort::MemoryInfo& memoryInformation,
-    Ort::Allocator& deviceAllocator,
     ID3D12Device* d3d12Device,
     ID3D12CommandQueue* commandQueue,
     ID3D12CommandAllocator* commandAllocator,
@@ -318,7 +318,6 @@ int wmain(int argc, wchar_t* argv[])
                     *ortDmlApi,
                     ioBinding,
                     memoryInformation,
-                    deviceAllocator,
                     d3d12Device,
                     commandQueue,
                     commandAllocator,
@@ -446,7 +445,6 @@ bool BindValues(
     OrtDmlApi const& ortDmlApi,
     Ort::IoBinding& ioBinding,
     Ort::MemoryInfo& memoryInformation,
-    Ort::Allocator& deviceAllocator,
     ID3D12Device* d3d12Device,
     ID3D12CommandQueue* commandQueue,
     ID3D12CommandAllocator* commandAllocator,
@@ -488,8 +486,15 @@ bool BindValues(
     // Fill input tensor with an increasing sequence.
     if (isInputTensor)
     {
-        //FillIntegerValues(/*out*/ tensorValues, tensorDataType, 0); // Alternate pattern.
-        GenerateValueSequence(/*out*/ tensorValues, tensorDataType);
+        if (FILL_INPUTS_INCREASING_SEQUENCE)
+        {
+            GenerateValueSequence(/*out*/ tensorValues, tensorDataType); // Alternate increasing fill pattern.
+        }
+        else
+        {
+            ScalarUnion zeroValue = {};
+            FillIntegerValues(/*out*/ tensorValues, tensorDataType, zeroValue);
+        }
     }
 
     char const* inputOrOutputString = isInputTensor ? "input" : "output";

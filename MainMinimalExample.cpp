@@ -4,6 +4,7 @@
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
+#pragma warning(disable: 4100) // oh hush - warning : 'argv': unreferenced formal parameter
 
 #include <iostream>
 #include <cstdio>
@@ -74,8 +75,8 @@ int main(int argc, char* argv[])
     // Just use CPU-bound resources here (see the full example for GPU tensor binding).
 
     std::vector<Ort::Value> inputTensors;
-    size_t elementCount = std::accumulate(inputShape.begin(), inputShape.end(), int64_t(0), std::multiplies<int64_t>());
-    std::vector<float> inputTensorValues(elementCount, 0.0f);
+    size_t elementCount = size_t(std::accumulate(inputShape.begin(), inputShape.end(), int64_t(1), std::multiplies<int64_t>()));
+    std::vector<float> inputTensorValues(elementCount, 42.0f);
     Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtArenaAllocator, OrtMemType::OrtMemTypeDefault);
     inputTensors.push_back(Ort::Value::CreateTensor<float>(memoryInfo, inputTensorValues.data(), inputTensorValues.size(), inputShape.data(), inputShape.size()));
 
@@ -88,7 +89,10 @@ int main(int argc, char* argv[])
     std::vector<Ort::Value> outputs = session.Run(Ort::RunOptions{}, inputNames.data(), inputTensors.data(), inputTensors.size(), outputNames.data(), outputNames.size());
 
     std::cout << "Output count: " << outputs.size() << std::endl;
-    std::cout << "Output is tensor: " << ((!outputs.empty() && outputs[0] != nullptr && outputs[0].IsTensor()) ? "true" : "false") << std::endl;
+    if (!outputs.empty() && outputs[0] != nullptr && outputs[0].IsTensor())
+    {
+        std::cout << "Output first value: " << outputs[0].GetTensorData<float>()[1] << std::endl;
+    }
 
     return EXIT_SUCCESS;
 }

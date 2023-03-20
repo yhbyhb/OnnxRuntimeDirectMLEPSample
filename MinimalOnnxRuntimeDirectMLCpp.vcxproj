@@ -155,7 +155,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="MinimalMain.cpp" />
+    <ClCompile Include="MainMinimalExample.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

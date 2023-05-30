@@ -466,7 +466,12 @@ bool BindValues(
     // Note when computing the element count that it's unsafe to call ORT's shapeInfo.GetElementCount()
     // because you may get a SafeInt overflow if there are free dimensions, which are treated as -1's.
     // So replace those with 1's first.
+#if ORT_API_VERSION >= 15
+    Ort::ConstTensorTypeAndShapeInfo shapeInfo = typeInfo.GetTensorTypeAndShapeInfo();
+#else
     Ort::Unowned<Ort::TensorTypeAndShapeInfo> shapeInfo = typeInfo.GetTensorTypeAndShapeInfo();
+#endif
+
     ONNXTensorElementDataType const tensorDataType = shapeInfo.GetElementType();
     if (!IsSupportedOnnxTensorElementDataType(tensorDataType))
     {

@@ -18,6 +18,7 @@
 #include <d3d12.h>
 #include <wrl/client.h> // Use the good old helper functions, not the huge WinRT entanglement.
 
+#include "onnxruntime_c_api.h"
 #include "cpu_provider_factory.h"
 #include "dml_provider_factory.h"
 #include "onnxruntime_cxx_api.h"
@@ -47,9 +48,15 @@ static_assert(USE_DML_EXECUTION_PROVIDER == true || PASS_TENSORS_AS_D3D_RESOURCE
 
 #define THROW_IF_FAILED(hr) {HRESULT localHr = (hr); if (FAILED(localHr)) throw localHr;}
 #define RETURN_IF_FAILED(hr) {HRESULT localHr = (hr); if (FAILED(localHr)) return localHr;}
-#define THROW_IF_NOT_OK(status) {auto localStatus = (status); if (localStatus) throw E_FAIL;}
-#define RETURN_HR_IF_NOT_OK(status) {auto localStatus = (status); if (localStatus) return E_FAIL;}
 
+#define THROW_IF_ORT_FAILED(exp) \
+    { \
+        OrtStatus* status = (exp); \
+        if (status != nullptr) \
+        { \
+            throw ConvertOrtStatusToHResult(*status); \
+        } \
+    }
 
 template <typename T>
 using BaseType =
@@ -134,6 +141,7 @@ bool BindValues(
     std::vector<ComPtr<IUnknown>>& tensorWrappers
 );
 
+HRESULT ConvertOrtStatusToHResult(OrtStatus& status);
 void PrintFirstNValues(std::span<const std::byte> data, size_t n, ONNXTensorElementDataType dataType);
 void PrintTopNValues(std::span<const std::byte> data, size_t n, ONNXTensorElementDataType dataType);
 void FillIntegerValues(std::span<std::byte> data, ONNXTensorElementDataType dataType, ScalarUnion value);
@@ -222,7 +230,7 @@ int wmain(int argc, wchar_t* argv[])
 
         OrtApi const& ortApi = Ort::GetApi(); // Uses ORT_API_VERSION
         const OrtDmlApi* ortDmlApi;
-        THROW_IF_NOT_OK(ortApi.GetExecutionProviderApi("DML", ORT_API_VERSION, reinterpret_cast<const void**>(&ortDmlApi)));
+        THROW_IF_ORT_FAILED(ortApi.GetExecutionProviderApi("DML", ORT_API_VERSION, reinterpret_cast<const void**>(&ortDmlApi)));
 
         Ort::Env ortEnvironment(ORT_LOGGING_LEVEL_WARNING, "DirectML_Direct3D_TensorAllocation_Test"); // Note ORT_LOGGING_LEVEL_VERBOSE is useful too.
         Ort::SessionOptions sessionOptions;
@@ -363,7 +371,7 @@ int wmain(int argc, wchar_t* argv[])
             {
                 assert(outputTensors[i].IsTensor());
                 ComPtr<ID3D12Resource> d3dResource;
-                THROW_IF_NOT_OK(ortDmlApi->GetD3D12ResourceFromAllocation(deviceAllocator, outputTensorWrappers[i], &d3dResource));
+                THROW_IF_ORT_FAILED(ortDmlApi->GetD3D12ResourceFromAllocation(deviceAllocator, outputTensorWrappers[i], &d3dResource));
                 DownloadTensorData(
                     commandQueue,
                     commandAllocator,
@@ -634,7 +642,7 @@ Ort::Value CreateTensorValueFromExistingD3DResource(
     *dmlEpResourceWrapper = nullptr;
 
     void* dmlAllocatorResource;
-    THROW_IF_NOT_OK(ortDmlApi.CreateGPUAllocationFromD3DResource(d3dResource, &dmlAllocatorResource));
+    THROW_IF_ORT_FAILED(ortDmlApi.CreateGPUAllocationFromD3DResource(d3dResource, &dmlAllocatorResource));
     auto deleter = [&](void*) {ortDmlApi.FreeGPUAllocation(dmlAllocatorResource); };
     deleting_unique_ptr<void> dmlAllocatorResourceCleanup(dmlAllocatorResource, deleter);
 
@@ -1152,5 +1160,43 @@ void PrintTopNValues(std::span<const std::byte> data, size_t n, ONNXTensorElemen
     {
         FormatTypedElement(&data[indices[i] * bytesPerElement], dataType, /*out*/ numberBuffer);
         printf("    element[%u] = %s\n", indices[i], numberBuffer);
+    }
+}
+
+
+// Converts an OrtStatus to an HRESULT, freeing the OrtStatus.
+//
+// If ORT returns a non-null OrtStatusPtr, it must be freed to avoid leaking memory.
+// Unfortunately the OrtStatus object itself offers no reference counting lifetime
+// management methods to easily release it (unlike all COM objects with IUnknown::Release
+// or any methods to get more information, meaning you either have to ferry the OrtApi
+// interface around or (for C++) use a global singleton. Since this is a simple C++ app,
+// and we're not doing anything exotic like mixing multiple ONNX Runtime versions in a
+// single process, just use the global singleton.
+//
+HRESULT ConvertOrtStatusToHResult(OrtStatus& status)
+{
+    // std::string errorMessage = ortApi.GetErrorMessage(&status);
+    OrtApi const& ortApi = Ort::GetApi(); // Uses ORT_API_VERSION
+    OrtErrorCode ortErrorCode = ortApi.GetErrorCode(&status);
+    ortApi.ReleaseStatus(&status);
+
+    switch (ortErrorCode)
+    {
+    // POSIX error codes really are inadequate to convey common errors, like even just bad file format :/.
+    // Consider using a custom error domain.
+    case OrtErrorCode::ORT_OK:               return S_OK;
+    case OrtErrorCode::ORT_INVALID_ARGUMENT: return E_INVALIDARG;
+    case OrtErrorCode::ORT_NO_SUCHFILE:      return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+    case OrtErrorCode::ORT_NOT_IMPLEMENTED:  return E_NOTIMPL;
+    case OrtErrorCode::ORT_FAIL:
+    case OrtErrorCode::ORT_NO_MODEL:
+    case OrtErrorCode::ORT_ENGINE_ERROR:
+    case OrtErrorCode::ORT_RUNTIME_EXCEPTION:
+    case OrtErrorCode::ORT_INVALID_PROTOBUF:
+    case OrtErrorCode::ORT_MODEL_LOADED:
+    case OrtErrorCode::ORT_INVALID_GRAPH:
+    case OrtErrorCode::ORT_EP_FAIL:
+    default:                                return E_FAIL;
     }
 }

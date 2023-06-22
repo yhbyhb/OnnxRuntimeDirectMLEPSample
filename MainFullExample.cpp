@@ -17,6 +17,7 @@
 #include <windows.h>
 #include <d3d12.h>
 #include <wrl/client.h> // Use the good old helper functions, not the huge WinRT entanglement.
+#include <dxgi.h>
 
 #include "onnxruntime_c_api.h"
 #include "cpu_provider_factory.h"
@@ -218,7 +219,31 @@ int wmain(int argc, wchar_t* argv[])
             .NodeMask = 0,
         };
 
-        THROW_IF_FAILED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&d3d12Device)));
+        UINT deviceIndex = 0;
+        ComPtr<IDXGIAdapter> pAdapter;
+        ComPtr<IDXGIFactory> pFactory;
+        HRESULT hr = CreateDXGIFactory(__uuidof(IDXGIFactory), (void**)(&pFactory));
+
+        while (pFactory->EnumAdapters(deviceIndex, &pAdapter) != DXGI_ERROR_NOT_FOUND)
+        {
+            DXGI_ADAPTER_DESC desc;
+            pAdapter->GetDesc(&desc);
+
+            std::wstring deviceDescription(desc.Description);
+            if (deviceDescription.find(L"NVIDIA") != std::string::npos || (deviceDescription.find(L"AMD") != std::string::npos))
+            {
+                std::wcout << "Found NVIDIA or AMD GPU: " << deviceDescription << ". deviceIndex : " << deviceIndex << std::endl;
+                break;
+            }
+            else
+            {
+                std::wcout << "Skipping non-NVIDIA or non-AMD GPU: " << deviceDescription << std::endl;
+            }
+
+            ++deviceIndex;
+        }
+
+        THROW_IF_FAILED(D3D12CreateDevice(pAdapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&d3d12Device)));
         QueryPerformanceCounter(&d3dDeviceCreationTime);
 
         THROW_IF_FAILED(d3d12Device->CreateCommandQueue(&commandQueueDescription, IID_PPV_ARGS(&commandQueue)));
@@ -263,7 +288,7 @@ int wmain(int argc, wchar_t* argv[])
             sessionOptions2.SetOptimizedModelFilePath(OPTIMIZED_FILENAME);
             if (USE_DML_EXECUTION_PROVIDER)
             {
-                ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions2, /*device index*/ 0);
+                ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions2, deviceIndex);
             }
             sessionOptions.SetGraphOptimizationLevel(GRAPH_OPTIMIZATION_LEVEL);
             Ort::Session session2 = Ort::Session(ortEnvironment, modelFilePath, sessionOptions2);
@@ -274,7 +299,7 @@ int wmain(int argc, wchar_t* argv[])
         if (USE_DML_EXECUTION_PROVIDER)
         {
             printf("Adding the DirectML execution provider.\n");
-            ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions, /*device index*/ 0);
+            ortDmlApi->SessionOptionsAppendExecutionProvider_DML(sessionOptions, deviceIndex);
         }
         else
         {
